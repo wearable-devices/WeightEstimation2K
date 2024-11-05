@@ -40,3 +40,15 @@ def apply_projection_to_dict(input_dict, n_components=2, perplexity=10, random_s
             start_idx = end_idx
 
     return new_dict
+
+
+def filter_dict_by_keys(original_dict, keys_list):
+    new_dict = {}
+
+    for key in keys_list:
+        if key in original_dict:
+            new_dict[key] = original_dict[key]
+        else:
+            print(f"Key '{key}' not found in dictionary")
+
+    return new_dict

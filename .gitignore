@@ -1,6 +1,7 @@
 
 *.pyc
-
 *.xml
-
 *.iml
+*.png
+*.gif
+logs/

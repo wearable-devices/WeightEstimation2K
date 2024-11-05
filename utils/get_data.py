@@ -100,7 +100,7 @@ def get_weight_file_from_dir(file_dir):
                 except:
                     print(filename)
                 contact = contact[0]
-                label = int(label)
+                label = float(label)/1000
                 # person = dirpath.split('/')[-1]
                 file_path = os.path.join(dirpath, filename)
                 file_name = '_'.join(file_path.split('/')[-3:])

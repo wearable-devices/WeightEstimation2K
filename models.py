@@ -1,6 +1,7 @@
 import tensorflow as tf
 from custom.layers import *
 import keras.ops as K
+import keras
 
 def get_optimizer(optimizer = 'LAMB',learning_rate=0.001, weight_decay=0.0):
     # https://stackoverflow.com/questions/67286051/how-can-i-tune-the-optimization-function-with-keras-tuner
@@ -28,9 +29,9 @@ def sensor_attention_processing(scattered_snc, units = 5, conv_activation='tanh'
                                                       scale_activation=scale_activation,
                                                       name=f'time_attention2_for_sensor_{sensor_num}')
         else:
-            time_attention_layer_1 = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim,
+            time_attention_layer_1 = keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim,
                                                                       name=f'time_attention1_for_sensor_{sensor_num}')
-            time_attention_layer_2 = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim,
+            time_attention_layer_2 = keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim,
                                                                         name=f'time_attention2_for_sensor_{sensor_num}')
         attended, _ = time_attention_layer_1(scattered_snc, scattered_snc, return_attention_scores=True)
         if attention_layers_for_one_sensor >1:
@@ -59,15 +60,15 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
                                                          'sigma_for_labels_prob': 0.4, },
                                              apply_noise=True, stddev=0.1,
                                              optimizer='LAMB', learning_rate=0.0016,
-                                             weight_decay=0.0, max_weight=8, compile=True,
+                                             weight_decay=0.0, max_weight=0.3, compile=True,
                                              use_weighted_loss=True, normalization_factor=3,
                                              weight_loss_multipliers_dict={weight: 1 for weight in [0, 1, 2, 4, 6, 8]}
                                              ):
     # Define inputs to the model
-    input_layer_snc1 = tf.keras.Input(shape=(window_size_snc,), name='Snc1')
+    input_layer_snc1 = keras.Input(shape=(window_size_snc,), name='snc_1')
     # input_layer_snc1 = tf.keras.Input(shape=(rows, cols), name='Snc1')
-    input_layer_snc2 = tf.keras.Input(shape=(window_size_snc,), name='Snc2')
-    input_layer_snc3 = tf.keras.Input(shape=(window_size_snc,), name='Snc3')
+    input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
+    input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
 
     scattered_snc1, scattered_snc11 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)(
         input_layer_snc1)
@@ -130,19 +131,19 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
             sensor_attention_layer = OrderedAttention(num_heads=num_sensor_attention_heads,
                                                       key_dim=key_dim_for_sensor_att, scale_activation=scale_activation)
         else:
-            sensor_attention_layer = tf.keras.layers.MultiHeadAttention(num_heads=2, key_dim=key_dim_for_sensor_att)
+            sensor_attention_layer = keras.layers.MultiHeadAttention(num_heads=2, key_dim=key_dim_for_sensor_att)
 
         attended, _ = sensor_attention_layer(sensor_conc, sensor_conc, return_attention_scores=True)
-        x1 = tf.keras.layers.Lambda(lambda x: x[:, 0, :], name='sensor_1_attended')(attended)
-        x2 = tf.keras.layers.Lambda(lambda x: x[:, 1, :], name='sensor_2_attended')(attended)
-        x3 = tf.keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended')(attended)
+        x1 = keras.layers.Lambda(lambda x: x[:, 0, :], name='sensor_1_attended')(attended)
+        x2 = keras.layers.Lambda(lambda x: x[:, 1, :], name='sensor_2_attended')(attended)
+        x3 = keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended')(attended)
 
         mean = K.mean(attended, axis=1)
     else:
 
-        x1 = tf.keras.layers.Dense(units, activation='softmax')(x1)
-        x2 = tf.keras.layers.Dense(units, activation='softmax')(x2)
-        x3 = tf.keras.layers.Dense(units, activation='softmax')(x3)
+        x1 = keras.layers.Dense(units, activation='softmax')(x1)
+        x2 = keras.layers.Dense(units, activation='softmax')(x2)
+        x3 = keras.layers.Dense(units, activation='softmax')(x3)
 
     if use_probabilistic_app:
         smpl_rate = prob_param['smpl_rate']
@@ -168,11 +169,11 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
         x, att_scores = main_attention_layer(query=attended, key=key,
                                              value=prob_support_labels_reshaped, return_attention_scores=True)
 
-        x1 = tf.keras.layers.Lambda(lambda x: x[:, 0, :], name='sensor_1_attended_attended')(x)
-        x2 = tf.keras.layers.Lambda(lambda x: x[:, 1, :], name='sensor_2_attended_attended')(x)
-        x3 = tf.keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended_attended')(x)
-        mean = tf.reduce_mean(x, axis=1)
-        mean = tf.keras.layers.Softmax()(mean)
+        x1 = keras.layers.Lambda(lambda x: x[:, 0, :], name='sensor_1_attended_attended')(x)
+        x2 = keras.layers.Lambda(lambda x: x[:, 1, :], name='sensor_2_attended_attended')(x)
+        x3 = keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended_attended')(x)
+        mean = K.mean(x, axis=1)
+        mean = keras.layers.Softmax()(mean)
         out_1, out_2, out_3 = x1, x2, x3
         # Apply argmax to the mean tensor
         x = tf.expand_dims(tf.argmax(mean, axis=-1, output_type=tf.int32), axis=-1)
@@ -184,7 +185,7 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
         out = x
 
     else:
-        final_dense_layer = tf.keras.layers.Dense(1, activation=final_activation, name='final_dense')
+        final_dense_layer = keras.layers.Dense(1, activation=final_activation, name='final_dense')
         out_1 = max_weight * final_dense_layer(x1)
         out_2 = max_weight * final_dense_layer(x2)
         out_3 = max_weight * final_dense_layer(x3)
@@ -195,10 +196,10 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
             out = tf.reduce_mean(
                 tf.concat([tf.expand_dims(out_1, axis=2), tf.expand_dims(out_2, axis=2), tf.expand_dims(out_3, axis=2)],
                           axis=2), axis=2)
-            out = tf.keras.layers.Flatten()(out)
+            out = keras.layers.Flatten()(out)
 
     inputs = {'snc_1': input_layer_snc1, 'snc_2': input_layer_snc2, 'snc_3': input_layer_snc3}
-    model = tf.keras.Model(inputs=inputs,
+    model = keras.Model(inputs=inputs,
                            outputs=[out, out_1, out_2, out_3]
                            )
     if compile:
@@ -217,10 +218,15 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
                               metrics=['mae', 'mse'],
                               optimizer=opt)
             else:
-                model.compile(loss=[None, tf.keras.losses.MeanSquaredError(),
-                                    tf.keras.losses.MeanSquaredError(),
-                                    tf.keras.losses.MeanSquaredError()],
-                              metrics=['mae', 'mse'],
+                model.compile(loss=[None, keras.losses.MeanSquaredError(),
+                                    keras.losses.MeanSquaredError(),
+                                    keras.losses.MeanSquaredError()],
+                              metrics=[
+                                  ['mae', 'mse'],  # metrics for first output
+                                  None,  # no metrics for second output
+                                  None,  # no metrics for third output
+                                  None  # no metrics for fourth output
+                              ],
                               optimizer=opt)
         else:
             loss_fn = FlexibleCrossEntropy(max_weight, 80)

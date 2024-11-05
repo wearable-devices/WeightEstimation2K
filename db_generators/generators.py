@@ -1,16 +1,20 @@
 import tensorflow as tf
 import  numpy as np
 import random
+import keras
 
-class MultiInputGenerator(tf.keras.utils.Sequence):
-    def __init__(self, persons_dict, window_size, phase='all', batch_size=1024, person_names=None, labels_to_balance=None, epoch_len=None):
+class MultiInputGenerator(keras.utils.Sequence):
+    def __init__(self, persons_dict, window_size, data_mode='all', batch_size=1024,
+                 person_names=None, labels_to_balance=None, epoch_len=None,
+                 contacts = ['L','M','R']):
         self.persons_dict = persons_dict
         self.window_size = window_size
         self.batch_size = batch_size
-        self.person_names = list(self.persons_dict.keys()) if person_names is None else person_names
+        self.person_names = list(self.persons_dict.keys()) if person_names is 'all' else person_names
         self.labels_to_balance = labels_to_balance or []
         self.epoch_len = epoch_len
-        self.phase = phase
+        self.phase = data_mode
+        self.contacts = contacts
 
         # Calculate samples per label per person
         num_labels = len(self.labels_to_balance) #if self.labels_to_balance else len(set(label for person in self.processed_data.values() for label in person.keys()))
@@ -18,7 +22,10 @@ class MultiInputGenerator(tf.keras.utils.Sequence):
 
     def __len__(self):
         # Assuming all persons have the same number of files
-        weight_rec_num = len(self.persons_dict[self.person_names[0]][1000]) # quantity of persons records for each weight
+        try:
+            weight_rec_num = len(self.persons_dict[self.person_names[0]][0.5]) # quantity of persons records for each weight
+        except:
+            weight_rec_num=1
         try:
             window_num = (1+(len(self.persons_dict[self.person_names[0]][1][0]['snc_1'])-self.window_size)//18)
         except:
@@ -40,7 +47,15 @@ class MultiInputGenerator(tf.keras.utils.Sequence):
             if self.phase == 'all':
                 person_data = self.persons_dict[person_name]
             else:
-                person_data = [record for record in self.persons_dict[person_name] if record['phase'] == self.phase]
+                try:
+                    person_data = {weight: [record for record in records  if record['phase'] == self.phase] for weight, records in self.persons_dict[person_name].items()}
+                except:
+                    print(person_name)
+                    print(self.persons_dict[person_name])
+            try:
+                person_data = {weight: [record for record in records  if record['contact'] in self.contacts] for weight, records in person_data.items()}
+            except:
+                print('contact', person_name, {weight: [record for record in records  if record['contact'] in self.contacts] for weight, records in person_data.items()})
 
             labels_to_use = self.labels_to_balance if self.labels_to_balance else person_data.keys()
 
@@ -50,7 +65,11 @@ class MultiInputGenerator(tf.keras.utils.Sequence):
 
                 for _ in range(self.samples_per_label_per_person):
                     # Randomly select a file for this label
-                    file_idx = tf.random.uniform([], 0, len(person_data[label]), dtype=tf.int32)
+                    try:
+                        file_idx = tf.random.uniform([], 0, len(person_data[label]), dtype=tf.int32)
+                    except:
+                        print(f'Problrm with {person_name}  {person_data[label]}')
+                        continue
                     file_data = person_data[label][file_idx.numpy()]
 
                     if tf.shape(file_data['snc_1'])[0] - self.window_size + 1>0:
@@ -65,14 +84,81 @@ class MultiInputGenerator(tf.keras.utils.Sequence):
                         labels.append(label)
                     else:
                         tf.print('Short file ', person_name, label)
+                # But return as a tuple of (inputs_dict, outputs_list)
+        inputs = {
+            'snc_1': tf.stack(snc1_batch),
+            'snc_2': tf.stack(snc2_batch),
+            'snc_3': tf.stack(snc3_batch)
+        }
 
-        return [tf.stack(snc1_batch),
-                tf.stack(snc2_batch),
-                tf.stack(snc3_batch)], tf.convert_to_tensor(labels)
+        outputs = [
+            tf.convert_to_tensor(labels),
+            tf.convert_to_tensor(labels),
+            tf.convert_to_tensor(labels),
+            tf.convert_to_tensor(labels)
+        ]
+
+        return inputs, outputs
+        # return [tf.stack(snc1_batch),
+        #         tf.stack(snc2_batch),
+        #         tf.stack(snc3_batch)], [tf.convert_to_tensor(labels),  tf.convert_to_tensor(labels),tf.convert_to_tensor(labels),tf.convert_to_tensor(labels)]
 
 
+def convert_generator_to_dataset(generator):
+    def gen_wrapper():
+        for i in range(len(generator)):
+            inputs, outputs = generator[i]
+            # Convert list outputs to tuple
+            yield (
+                {
+                    'snc_1': inputs['snc_1'],
+                    'snc_2': inputs['snc_2'],
+                    'snc_3': inputs['snc_3']
+                },
+                tuple(outputs)  # Convert list to tuple
+            )
 
-class MatchingLearningGenerator(tf.keras.utils.Sequence):
+    # Define the output signature
+    output_signature = (
+        # Input signatures
+        {
+            'snc_1': tf.TensorSpec(shape=(None, generator.window_size), dtype=tf.float32),
+            'snc_2': tf.TensorSpec(shape=(None, generator.window_size), dtype=tf.float32),
+            'snc_3': tf.TensorSpec(shape=(None, generator.window_size), dtype=tf.float32)
+        },
+        # Output signatures (4 identical outputs)
+        (
+            tf.TensorSpec(shape=(None,), dtype=tf.float32),
+            tf.TensorSpec(shape=(None,), dtype=tf.float32),
+            tf.TensorSpec(shape=(None,), dtype=tf.float32),
+            tf.TensorSpec(shape=(None,), dtype=tf.float32)
+        )
+    )
+
+    return tf.data.Dataset.from_generator(
+        gen_wrapper,
+        output_signature=output_signature
+    )
+
+def create_data_for_model(person_dict, snc_window_size, batch_size, labels_to_balance, epoch_len, used_persons,
+                          data_mode='all', contacts=['L','M','R']):
+    # Create datasets
+    train_generator = MultiInputGenerator(
+        person_dict,
+        window_size=snc_window_size,
+        batch_size=batch_size,
+        data_mode=data_mode,
+        labels_to_balance=labels_to_balance,
+        epoch_len=epoch_len,
+        person_names=used_persons,
+        contacts=contacts
+    )
+
+    train_ds = convert_generator_to_dataset(train_generator)
+    return train_ds
+
+
+class MatchingLearningGenerator(keras.utils.Sequence):
     '''generator for create_personal_weight_estimation_model'''
     def __init__(self, persons_dict_for_labeled_data, persons_dict_for_query_data, window_size, k_shot, q_query,
                  samples_per_weight, persons_per_batch, tasks_per_person, labeled_window_size=None):
@@ -175,7 +261,7 @@ class MatchingLearningGenerator(tf.keras.utils.Sequence):
 
 
 
-class OneSncGenerator(tf.keras.utils.Sequence):
+class OneSncGenerator(keras.utils.Sequence):
     '''generator for create_personal_ embedding_model'''
     def __init__(self, persons_dict, window_size, samples_per_label_per_person=5, sensor_num=1):
         self.persons_dict = persons_dict
@@ -217,3 +303,7 @@ class OneSncGenerator(tf.keras.utils.Sequence):
                     labels.append(label)
 
         return [tf.stack(snc_batch)], tf.convert_to_tensor(labels)
+
+
+
+

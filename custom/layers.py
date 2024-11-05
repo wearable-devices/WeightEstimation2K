@@ -2,11 +2,12 @@ import tensorflow as tf
 import numpy as np
 from kymatio.scattering1d.filter_bank import scattering_filter_factory
 import keras.ops as K
+import keras
 
-# @tf.keras.saving.register_keras_serializable(package='weight_estimation', name='ScatteringTimeDomain')
-@tf.keras.utils.register_keras_serializable(package='weight_estimation', name='ScatteringTimeDomain')
+# @keras.saving.register_keras_serializable(package='weight_estimation', name='ScatteringTimeDomain')
+@keras.utils.register_keras_serializable(package='weight_estimation', name='ScatteringTimeDomain')
 
-class ScatteringTimeDomain(tf.keras.layers.Layer):
+class ScatteringTimeDomain(keras.layers.Layer):
     # Please help me implement the second layer as you suggested
     def __init__(self, J, Q, undersampling, max_order, support=None, sigma_phi=None, dc_component=False, **kwargs):
         super(ScatteringTimeDomain, self).__init__(**kwargs)
@@ -97,7 +98,7 @@ class ScatteringTimeDomain(tf.keras.layers.Layer):
             # If max order is 1, just return the first order coefficients
         # resize_height = self.proj0_height + 1 if self.dc_component else self.proj0_height
         if self.max_order == 1:
-            return tf.keras.layers.Resizing(self.resize_height, int(self.N / self.undersampling))(
+            return keras.layers.Resizing(self.resize_height, int(self.N / self.undersampling))(
                 tf.expand_dims(tf.transpose(proj0, perm=(0, 2, 1)), axis=-1))
 
         else:
@@ -124,9 +125,9 @@ class ScatteringTimeDomain(tf.keras.layers.Layer):
             paddings = tf.constant([[0, 0], [0, 0], [int(self.support / 2), int(self.support / 2)]])
 
             # Resize the second-order coefficients and the first-order coefficients
-            proj0_resized = tf.keras.layers.Resizing(self.resize_height, int(self.N / self.undersampling))(
+            proj0_resized = keras.layers.Resizing(self.resize_height, int(self.N / self.undersampling))(
                 tf.expand_dims(tf.transpose(proj0, perm=(0, 2, 1)), axis=-1))
-            proj1_resized = tf.keras.layers.Resizing(self.proj1_height, int(self.N / self.undersampling))(
+            proj1_resized = keras.layers.Resizing(self.proj1_height, int(self.N / self.undersampling))(
                 tf.expand_dims(tf.pad(tf.transpose(proj1, perm=(0, 2, 1)), paddings, "SYMMETRIC"), axis=-1))
             # proj1_resized = tf.pad(proj1_resized, paddings, "SYMMETRIC")
 
@@ -147,66 +148,13 @@ class ScatteringTimeDomain(tf.keras.layers.Layer):
 
 
 # Register the custom layer for loading
-tf.keras.utils.get_custom_objects()['ScatteringTimeDomain'] = ScatteringTimeDomain
+keras.utils.get_custom_objects()['ScatteringTimeDomain'] = ScatteringTimeDomain
 
 
-# @tf.keras.utils.register_keras_serializable(package='weight_estimation', name='CustomMultiHeadAttention')
-# class CustomMultiHeadAttention(tf.keras.layers.Layer):
-#     def __init__(self,  key_dim, num_heads=1, **kwargs):
-#         super(CustomMultiHeadAttention, self).__init__(**kwargs)
-#         self.num_heads = num_heads
-#         self.key_dim = key_dim
-#
-#     def build(self, input_shape):
-#         self.scale = self.key_dim ** -0.5
-#
-#     def call(self, query, key, value, return_attention_scores=True):
-#
-#         # batch_size = tf.shape(query)[0]
-#
-#         # Reshape inputs for multi-head attention
-#         # query = tf.reshape(query, (batch_size, -1, self.num_heads, self.key_dim))
-#         # key = tf.reshape(key, (batch_size, -1, self.num_heads, self.key_dim))
-#         # value = tf.reshape(value, (batch_size, -1, self.num_heads, self.key_dim))
-#         #
-#         # # Transpose to [batch_size, num_heads, seq_length, key_dim]
-#         # query = tf.transpose(query, perm=[0, 2, 1, 3])
-#         # key = tf.transpose(key, perm=[0, 2, 1, 3])
-#         # value = tf.transpose(value, perm=[0, 2, 1, 3])
-#         embd_query = tf.keras.layers.Dense(units=self.key_dim, activation='linear')(query)
-#         embd_key = tf.keras.layers.Dense(units=self.key_dim, activation='linear')(key)
-#
-#
-#         # Calculate attention scores
-#         matmul_qk = tf.matmul(embd_query,  embd_key, transpose_b=True)
-#         scaled_attention_logits = matmul_qk * self.scale
-#
-#         # Apply softmax to get attention weights
-#         attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
-#
-#         # Apply attention weights to values
-#         output = tf.matmul(attention_weights, value)
-#
-#         # Transpose and reshape output
-#         # output = tf.transpose(output, perm=[0, 2, 1])
-#         # output = tf.reshape(output, (batch_size, -1, self.num_heads * self.key_dim))
-#
-#         return output, attention_weights
-#
-#     def get_config(self):
-#         config = super(CustomMultiHeadAttention, self).get_config()
-#         config.update({
-#             "num_heads": self.num_heads,
-#             "key_dim": self.key_dim
-#         })
-#         return config
-#
-#     @classmethod
-#     def from_config(cls, config):
-#         return cls(**config)
 
-@tf.keras.utils.register_keras_serializable(package='weight_estimation', name='CustomMultiHeadAttention')
-class CustomMultiHeadAttention(tf.keras.layers.Layer):
+
+@keras.utils.register_keras_serializable(package='weight_estimation', name='CustomMultiHeadAttention')
+class CustomMultiHeadAttention(keras.layers.Layer):
     def __init__(self, key_dim, num_heads=1, **kwargs):
         super(CustomMultiHeadAttention, self).__init__(**kwargs)
         self.num_heads = num_heads
@@ -214,8 +162,8 @@ class CustomMultiHeadAttention(tf.keras.layers.Layer):
 
     def build(self, input_shape):
         self.scale = self.key_dim ** -0.5
-        self.query_dense = tf.keras.layers.Dense(units=self.key_dim, activation='linear')
-        self.key_dense = tf.keras.layers.Dense(units=self.key_dim, activation='linear')
+        self.query_dense = keras.layers.Dense(units=self.key_dim, activation='linear')
+        self.key_dense = keras.layers.Dense(units=self.key_dim, activation='linear')
 
     def call(self, query, key, value, return_attention_scores=True):
         embd_query = self.query_dense(query)
@@ -245,7 +193,7 @@ class CustomMultiHeadAttention(tf.keras.layers.Layer):
     def from_config(cls, config):
         return cls(**config)
 
-class ScaleLayer(tf.keras.layers.Layer):
+class ScaleLayer(keras.layers.Layer):
     def __init__(self, scale=0.1, **kwargs):
         super(ScaleLayer, self).__init__(**kwargs)
         self.scale = scale
@@ -259,15 +207,15 @@ class ScaleLayer(tf.keras.layers.Layer):
         return config
 
 
-@tf.keras.utils.register_keras_serializable(package='weight_estimation', name='CustomPositionalEmbedding')
+@keras.utils.register_keras_serializable(package='weight_estimation', name='CustomPositionalEmbedding')
 
-class CustomPositionalEmbedding(tf.keras.layers.Layer):
+class CustomPositionalEmbedding(keras.layers.Layer):
     def __init__(self, scale_activation='linear', **kwargs):
         super().__init__(**kwargs)
         if scale_activation == 'mult01':
             self.scale_activation = ScaleLayer(scale=0.1)
         else:
-            self.scale_activation = tf.keras.layers.Activation(scale_activation)
+            self.scale_activation = keras.layers.Activation(scale_activation)
 
     def call(self, inputs):
         # inputs shape: (batch_size, time_steps, n)
@@ -295,8 +243,8 @@ class CustomPositionalEmbedding(tf.keras.layers.Layer):
     def from_config(cls, config):
         return cls(**config)
 
-@tf.keras.utils.register_keras_serializable(package='weight_estimation', name='OrderedAttention')
-class OrderedAttention(tf.keras.layers.Layer):
+@keras.utils.register_keras_serializable(package='weight_estimation', name='OrderedAttention')
+class OrderedAttention(keras.layers.Layer):
     def __init__(self, num_heads, key_dim, scale_activation='linear', name=None, **kwargs):
         super(OrderedAttention, self).__init__(name=name, **kwargs)
         self.num_heads = num_heads
@@ -307,7 +255,7 @@ class OrderedAttention(tf.keras.layers.Layer):
         self.positional_embedding = None
 
     def build(self, input_shape):
-        self.attention_layer = tf.keras.layers.MultiHeadAttention(
+        self.attention_layer = keras.layers.MultiHeadAttention(
             num_heads=self.num_heads,
             key_dim=self.key_dim,
             name=f"{self.name}_mha" if self.name else None
@@ -356,14 +304,14 @@ def sensor_image_layers(sensor_1_image, units, activation, apply_tfp=False, appl
     if apply_tfp:
         # tfp.layers.DenseVariational(units=20, make_prior_fn=prior_fn, make_posterior_fn=posterior_fn)
         x = tfp.layers.DenseVariational(units=20, make_prior_fn=prior_fn, make_posterior_fn=posterior_fn, activation=activation)(new_image)
-        x = tf.keras.layers.Flatten()(x)
+        x = keras.layers.Flatten()(x)
         x = tfp.layers.DenseVariational(units=units, activation=activation, name=f'dense_1_for_sensor_{sensor_num}')(x)
-        x = tf.keras.layers.Dropout(0.1)(x)
+        x = keras.layers.Dropout(0.1)(x)
         x = tfp.layers.DenseVariational(units=units // 2, activation=activation)(x)  # , name=f'dense_2_for_sensor_{sensor_num}')(x)
     else:
-        x = tf.keras.layers.Dense(1, activation=activation)(new_image)
-        x = tf.keras.layers.Flatten()(x)
-        x = tf.keras.layers.Dense(units, activation=activation, name=f'dense_1_for_sensor_{sensor_num}')(x)
-        x = tf.keras.layers.Dropout(0.1)(x)
+        x = keras.layers.Dense(1, activation=activation)(new_image)
+        x = keras.layers.Flatten()(x)
+        x = keras.layers.Dense(units, activation=activation, name=f'dense_1_for_sensor_{sensor_num}')(x)
+        x = keras.layers.Dropout(0.1)(x)
 
     return x

@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 import plotly.graph_objects as go
 from filterpy.kalman import predict
+from numpy.core.records import record
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import keract
@@ -14,11 +15,15 @@ from tensorflow.python.ops.losses.losses_impl import mean_squared_error
 
 from PIL import Image
 import io
+import keras
 
 import matplotlib.pyplot as plt
 
+# from stam import data_mode
+import keras.ops as K
+from utils.maps import filter_dict_by_keys
 
-class SaveKerasModelCallback(tf.keras.callbacks.Callback):
+class SaveKerasModelCallback(keras.callbacks.Callback):
     def __init__(self, save_path, model_name):
         super(SaveKerasModelCallback, self).__init__()
         self.save_path = save_path
@@ -34,24 +39,28 @@ class SaveKerasModelCallback(tf.keras.callbacks.Callback):
     #     print(f'Model saved to {self.save_path}')
 
 
-class FeatureSpacePlotCallback(tf.keras.callbacks.Callback):
-    def __init__(self, persons_dict, trial_dir, layer_name, persons_dict_labeled=None, proj='pca', metric="euclidean",
-                 num_of_components='3', considered_weights=[0, 1, 2, 4, 6, 8],
+class FeatureSpacePlotCallback(keras.callbacks.Callback):
+    def __init__(self, persons_dict, trial_dir, layer_name, used_persons='all', proj='pca', metric="euclidean",
+                 num_of_components='3', considered_weights=[0, 0.5, 1,2], data_mode='all',
                  samples_per_label_per_person=10, picture_name='name', phase='train'):
         super(FeatureSpacePlotCallback, self).__init__()
 
-        self.persons_dict = persons_dict
+        if used_persons == 'all':
+            self.persons_dict = persons_dict
+        else:
+            self.persons_dict = filter_dict_by_keys(persons_dict, used_persons)
         self.trial_dir = trial_dir
         self.layer_name = layer_name
         self.proj = proj
         self.metric = metric
         self.phase = phase
+        self.data_mode = data_mode
         self.num_of_components = num_of_components
         self.picture_name = picture_name
-        self.persons_dict_labeled = persons_dict_labeled
+        # self.persons_dict_labeled = persons_dict_labeled
         self.considered_weights = considered_weights
-        if persons_dict_labeled is None:
-            self.persons_dict_labeled = self.persons_dict
+        # if persons_dict_labeled is None:
+        #     self.persons_dict_labeled = self.persons_dict
         self.samples_per_label_per_person = samples_per_label_per_person
 
     def on_train_end(self, logs=None):
@@ -72,7 +81,7 @@ class FeatureSpacePlotCallback(tf.keras.callbacks.Callback):
     def calc_feature_space(self):
         """ Calculate and project the feature space from model layer outputs for each person and label.  """
 
-        window_size = self.model.get_layer('Snc1').input.shape[-1]
+        window_size = self.model.input['snc_1'].shape[-1]
 
         if len(self.model.inputs) == 7:  # model has a labeled input
             samples_per_weight = int(self.model.inputs[3].shape[
@@ -88,34 +97,45 @@ class FeatureSpacePlotCallback(tf.keras.callbacks.Callback):
                                 weight in weight_dict}
             # label = weight
             for label, records in weight_dict_part.items():
-                snc1_batch = []
-                snc2_batch = []
-                snc3_batch = []
-                for _ in range(self.samples_per_label_per_person):
-                    # Randomly select a file for this label
-                    file_idx = tf.random.uniform([], 0, len(records), dtype=tf.int32)
-                    file_data = records[file_idx.numpy()]
-                    # Generate a random starting point within the file
-                    start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
-                                              dtype=tf.int32)
-                    # Extract the window
-                    snc1_batch.append(file_data['snc_1'][start:start + window_size])
-                    snc2_batch.append(file_data['snc_2'][start:start + window_size])
-                    snc3_batch.append(file_data['snc_3'][start:start + window_size])
-                    # labels.append(label)
+                # tf.print('recored', records)
+                # tf.print('data mode', self.data_mode)
+                if self.data_mode == 'all':
+                    used_records = records
+                else:
+                    used_records = [record for record in records if record['phase'] == self.data_mode]
+                # tf.print('used_recored', used_records)
+                if len(used_records)>0:
+                    snc1_batch = []
+                    snc2_batch = []
+                    snc3_batch = []
+                    for _ in range(self.samples_per_label_per_person):
+                        # Randomly select a file for this label
+                        file_idx = tf.random.uniform([], 0, len(records), dtype=tf.int32)
+                        file_data = records[file_idx.numpy()]
+                        # Generate a random starting point within the file
+                        start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
+                                                  dtype=tf.int32)
+                        # Extract the window
+                        snc1_batch.append(file_data['snc_1'][start:start + window_size])
+                        snc2_batch.append(file_data['snc_2'][start:start + window_size])
+                        snc3_batch.append(file_data['snc_3'][start:start + window_size])
+                        # labels.append(label)
 
-                persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
-                if len(self.model.inputs) == 7:
-                    persons_input_data = [tf.expand_dims(snc_data, axis=1) for snc_data in persons_input_data]
-                    persons_labeled_input_dict = labeled_input_dict[person]
-                    persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
-                                                  for tensor in persons_labeled_input_dict.values()]
-                    persons_input_data = persons_input_data + persons_labeled_input_data
+                    persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
+                    if len(self.model.inputs) == 7:
+                        persons_input_data = [tf.expand_dims(snc_data, axis=1) for snc_data in persons_input_data]
+                        persons_labeled_input_dict = labeled_input_dict[person]
+                        persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
+                                                      for tensor in persons_labeled_input_dict.values()]
+                        persons_input_data = persons_input_data + persons_labeled_input_data
 
-                layer_predictions = ex_get_layer_predictions(self.model, persons_input_data, self.layer_name)
-                layer_predictions = tf.keras.layers.Flatten()(layer_predictions)
-                layer_output_dict[person][label] = layer_predictions
+                    layer_predictions = get_layer_output(self.model, persons_input_data, self.layer_name)
+                    # tf.print('layer_pred', layer_predictions)
+                    # tf.print('actiVAT',keract.get_activations(self.model, persons_input_data, layer_names=[self.layer_name]))
+                    layer_predictions = keras.layers.Flatten()(layer_predictions)
+                    layer_output_dict[person][label] = layer_predictions
         # Extract features from an intermediate layer and project them
+        # tf.print('layer output', layer_output_dict)
         self.projected_layer_output_dict = apply_projection_to_dict(layer_output_dict,
                                                                     n_components=self.num_of_components,
                                                                     perplexity=30, random_state=42, proj=self.proj,
@@ -128,6 +148,7 @@ class FeatureSpacePlotCallback(tf.keras.callbacks.Callback):
         # Color map for labels
         color_map = {
             0: 'red',
+            0.5: 'pink',
             1: 'blue',
             2: 'green',
             4: 'yellow',
@@ -137,6 +158,7 @@ class FeatureSpacePlotCallback(tf.keras.callbacks.Callback):
 
         color_map_2 = {
             0: 'crimson',
+            0.5: 'pink',
             1: 'navy',
             2: 'forestgreen',  # Changed from 'forest_green' to 'forestgreen'
             4: 'gold',
@@ -182,7 +204,7 @@ class FeatureSpacePlotCallback(tf.keras.callbacks.Callback):
                             opacity=0.8
                         ),
                         # name=f"{person} - {label}"
-                        name=f"user {user_num} - {label} kg"
+                        name=f" {person} - {label} kg"
                     ))
 
         # Update layout
@@ -229,22 +251,24 @@ class FeatureSpacePlotCallback(tf.keras.callbacks.Callback):
 
     def cleanup(self):
         self.projected_layer_output_dict = None
-        tf.keras.backend.clear_session()
+        keras.backend.clear_session()
 
 
-class OutputPlotCallback(tf.keras.callbacks.Callback):
-    def __init__(self, persons_dict, trial_dir, persons_dict_labeled=None,
-                 samples_per_label_per_person=10, picture_name='name', phase='train'):
+class OutputPlotCallback(keras.callbacks.Callback):
+    def __init__(self, persons_dict, trial_dir, #persons_dict_labeled=None,
+                 samples_per_label_per_person=10,used_persons='all',data_mode='all', picture_name='name', phase='train'):
         super(OutputPlotCallback, self).__init__()
+        '''used_persons - list of persons to work with'''
 
-        self.persons_dict = persons_dict
+        if used_persons == 'all':
+            self.persons_dict = persons_dict
+        else:
+            self.persons_dict = filter_dict_by_keys(persons_dict, used_persons)
         self.trial_dir = trial_dir
         self.phase = phase
+        self.data_mode = data_mode
         self.picture_name = picture_name
         self.samples_per_label_per_person = samples_per_label_per_person
-        self.persons_dict_labeled = persons_dict_labeled
-        if persons_dict_labeled is None:
-            self.persons_dict_labeled = self.persons_dict
 
         self.output_dict = {person: {} for person in
                             self.persons_dict.keys()}  # {person: {weight: [] for weight in persons_dict[person]} for person in persons_dict.keys()}
@@ -255,11 +279,13 @@ class OutputPlotCallback(tf.keras.callbacks.Callback):
     def on_train_end(self, logs=None):
         try:
             self.calc_feature_space()
+        except:
+            print('Could not calc  output Callback')
+        try:
             self.plot_feature_space_optuna()
-
             # print(self.personal_accuracy)
         except:
-            print('Could not calc or plot output Callback')
+            print('Could not  plot output Callback')
 
     def on_test_end(self, logs=None):
         if self.phase == 'test':
@@ -284,7 +310,7 @@ class OutputPlotCallback(tf.keras.callbacks.Callback):
 
     def calc_feature_space(self):
         """this method  """
-        window_size = self.model.get_layer('Snc1').input.shape[-1]
+        window_size = self.model.input['snc_1'].shape[-1]
 
         if len(self.model.inputs) == 7:  # model has a labeled input
             samples_per_weight = int(self.model.inputs[3].shape[
@@ -294,31 +320,36 @@ class OutputPlotCallback(tf.keras.callbacks.Callback):
         for person, weight_dict in self.persons_dict.items():
 
             for weight, records in weight_dict.items():
-                snc1_batch = []
-                snc2_batch = []
-                snc3_batch = []
-                for _ in range(self.samples_per_label_per_person):
-                    # Randomly select a file for this label
-                    file_idx = tf.random.uniform([], 0, len(records), dtype=tf.int32)
-                    file_data = records[file_idx.numpy()]
-                    # Generate a random starting point within the file
-                    start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
-                                              dtype=tf.int32)
-                    # Extract the window
-                    snc1_batch.append(file_data['snc_1'][start:start + window_size])
-                    snc2_batch.append(file_data['snc_2'][start:start + window_size])
-                    snc3_batch.append(file_data['snc_3'][start:start + window_size])
-                # if len(self.model.inputs == 3): # model doesn't have labeled input
-                persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
-                if len(self.model.inputs) == 7:
-                    persons_input_data = [tf.expand_dims(snc_data, axis=1) for snc_data in persons_input_data]
-                    persons_labeled_input_dict = labeled_input_dict[person]
-                    persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
-                                                  for tensor in persons_labeled_input_dict.values()]
-                    persons_input_data = persons_input_data + persons_labeled_input_data
-                predictions = self.model([persons_input_data])[0]
-                # predictions = tf.squeeze(tf.keras.layers.Flatten()(predictions), axis=-1)
-                self.output_dict[person][weight] = predictions
+                if self.data_mode == 'all':
+                    used_records = records
+                else:
+                    used_records = [record for record in records if record['phase'] == self.data_mode]
+                if len(used_records)>0:
+                    snc1_batch = []
+                    snc2_batch = []
+                    snc3_batch = []
+                    for _ in range(self.samples_per_label_per_person):
+                        # Randomly select a file for this label
+                        file_idx = tf.random.uniform([], 0, len(used_records), dtype=tf.int32)
+                        file_data = used_records[file_idx.numpy()]
+                        # Generate a random starting point within the file
+                        start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
+                                                  dtype=tf.int32)
+                        # Extract the window
+                        snc1_batch.append(file_data['snc_1'][start:start + window_size])
+                        snc2_batch.append(file_data['snc_2'][start:start + window_size])
+                        snc3_batch.append(file_data['snc_3'][start:start + window_size])
+                    # if len(self.model.inputs == 3): # model doesn't have labeled input
+                    persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
+                    if len(self.model.inputs) == 7:
+                        persons_input_data = [tf.expand_dims(snc_data, axis=1) for snc_data in persons_input_data]
+                        persons_labeled_input_dict = labeled_input_dict[person]
+                        persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
+                                                      for tensor in persons_labeled_input_dict.values()]
+                        persons_input_data = persons_input_data + persons_labeled_input_data
+                    predictions = self.model([persons_input_data])[0]
+                    # predictions = tf.squeeze(tf.keras.layers.Flatten()(predictions), axis=-1)
+                    self.output_dict[person][weight] = predictions
                 # tf.print('weight', weight)
                 #
                 # tf.print('predictions', predictions.shape, predictions)
@@ -327,6 +358,7 @@ class OutputPlotCallback(tf.keras.callbacks.Callback):
         # Color map for labels
         color_map = {
             0: 'red',
+            0.5: 'pink',
             1: 'blue',
             2: 'green',
             4: 'yellow',
@@ -374,8 +406,8 @@ class OutputPlotCallback(tf.keras.callbacks.Callback):
             ))
         # Add diagonal line y=x
         fig.add_trace(go.Scatter(
-            x=[-0.1, 8.2],
-            y=[-0.1, 8.2],
+            x=[-0.1, 3],
+            y=[-0.1, 3],
             mode='lines',
             line=dict(color='gray', dash='dash'),
             name='y=x'
@@ -387,14 +419,14 @@ class OutputPlotCallback(tf.keras.callbacks.Callback):
             yaxis_title="Predicted value",
             legend_title="Person - Label",
             xaxis=dict(
-                range=[-0.1, 8.2],  # Set x-axis limits
+                range=[-0.1, 3],  # Set x-axis limits
                 tickmode='array',
                 tickvals=list(set([label for labels in self.output_dict.values() for label in labels.keys()])),
                 ticktext=[f'{label} kg' for label in
                           set([label for labels in self.output_dict.values() for label in labels.keys()])]
             ),
             yaxis=dict(
-                range=[-0.1, 8.2]  # Set y-axis limits
+                range=[-0.1, 3]  # Set y-axis limits
             )
         )
 
@@ -412,7 +444,7 @@ class OutputPlotCallback(tf.keras.callbacks.Callback):
 
     def cleanup(self):
         self.projected_layer_output_dict = None
-        tf.keras.backend.clear_session()
+        keras.backend.clear_session()
 
 
 from custom.layers import ScatteringTimeDomain
@@ -420,29 +452,36 @@ from custom.layers import OrderedAttention
 # from db_generators.get_db import get_weight_file_from_dir
 
 
-def ex_get_layer_predictions(model, input_data, layer_name):
-    '''returns layer output'''
-    try:
-        # tf.compat.v1.disable_eager_execution()
-        # activations = keract.get_activations(model, [input_data])
-        try:
-            activations = keract.get_activations(model, input_data, layer_names=[layer_name])
-        except:
-            activations = keract.get_activations(model, input_data)
-        # layer_extraction = activations[layer_name]
-        # Find the first layer name that includes the pattern
-        matching_layer = next((name for name in activations.keys() if layer_name in name), None)
-        if matching_layer is None:
-            raise ValueError(f"No layer found with name pattern: {layer_name}")
+# def ex_get_layer_predictions(model, input_data, layer_name):
+#     '''returns layer output'''
+#     try:
+#         # tf.compat.v1.disable_eager_execution()
+#         # activations = keract.get_activations(model, [input_data])
+#         try:
+#             activations = keract.get_activations(model, input_data, layer_names=[layer_name])
+#         except:
+#             activations = keract.get_activations(model, input_data)
+#         # layer_extraction = activations[layer_name]
+#         # Find the first layer name that includes the pattern
+#         matching_layer = next((name for name in activations.keys() if layer_name in name), None)
+#         if matching_layer is None:
+#             raise ValueError(f"No layer found with name pattern: {layer_name}")
+#
+#         layer_extraction = activations[matching_layer]
+#         if isinstance(layer_extraction, list) or isinstance(layer_extraction, tuple):
+#             layer_extraction = layer_extraction[0]
+#     except:
+#         print(f'Problem with layer {layer_name}')
+#         layer_extraction = 0
+#     return layer_extraction
 
-        layer_extraction = activations[matching_layer]
-        if isinstance(layer_extraction, list) or isinstance(layer_extraction, tuple):
-            layer_extraction = layer_extraction[0]
-    except:
-        print(f'Problem with layer {layer_name}')
-        layer_extraction = 0
-    return layer_extraction
 
+def get_layer_output(model, input_data, layer_name):
+    intermediate_model = keras.Model(
+        inputs=model.input,
+        outputs=model.get_layer(layer_name).output
+    )
+    return intermediate_model.predict(input_data)
 
 def apply_projection_to_dict(input_dict, n_components=2, perplexity=10, random_state=42, proj='tsne',
                              metric="euclidean"):
@@ -458,6 +497,7 @@ def apply_projection_to_dict(input_dict, n_components=2, perplexity=10, random_s
             all_predictions.append(predictions.numpy())
 
     # Concatenate all predictions
+    # tf.print('all_predictions', all_predictions)
     all_predictions = np.concatenate(all_predictions, axis=0)
 
     # Apply t-SNE
@@ -560,7 +600,7 @@ def get_labeled_list(persons_dict, samples_per_weight=10, window_size=306):
     return labeled_input_dict
 
 
-class FlattenFeatureSpacePlotCallback(tf.keras.callbacks.Callback):
+class FlattenFeatureSpacePlotCallback(keras.callbacks.Callback):
     def __init__(self, persons_dict, trial_dir, layer_name, persons_dict_labeled=None,
                  considered_weights=[0, 1, 2, 4, 6, 8],
                  samples_per_label_per_person=10, picture_name='name', phase='train'):
@@ -631,8 +671,9 @@ class FlattenFeatureSpacePlotCallback(tf.keras.callbacks.Callback):
                                                   for tensor in persons_labeled_input_dict.values()]
                     persons_input_data = persons_input_data + persons_labeled_input_data
 
-                layer_predictions = ex_get_layer_predictions(self.model, persons_input_data, self.layer_name)
-                layer_predictions = tf.keras.layers.Flatten()(layer_predictions)
+                layer_predictions =  get_layer_output(self.model, persons_input_data, self.layer_name)
+
+                layer_predictions = keras.layers.Flatten()(layer_predictions)
                 layer_output_dict[person][label] = layer_predictions
         # Extract features from an intermediate layer and project them
         self.layer_output_dict = layer_output_dict
@@ -677,7 +718,7 @@ class FlattenFeatureSpacePlotCallback(tf.keras.callbacks.Callback):
 
     def cleanup(self):
         self.projected_layer_output_dict = None
-        tf.keras.backend.clear_session()
+        keras.backend.clear_session()
 
 
 if __name__ == "__main__":
@@ -692,6 +733,6 @@ if __name__ == "__main__":
     dict = get_labeled_list(train_persons_dict, samples_per_weight=10, window_size=306)
 
     emb_map_path = '/home/wld-algo-5/Production/WeightEstimation/logs/25-08-2024-10-47-01/trials/trial_0/emb_map_trial_0.keras'
-    model = tf.keras.models.load_model(emb_map_path,  # custom_objects=custom_objects,
+    model = keras.models.load_model(emb_map_path,  # custom_objects=custom_objects,
                                        compile=False)
 

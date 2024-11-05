@@ -1,7 +1,8 @@
 import tensorflow as tf
+import keras
 
-class WeightedMeanSquaredError(tf.keras.losses.Loss):
-    def __init__(self, weight_dict, reduction=tf.keras.losses.Reduction.AUTO, name="weighted_mean_squared_error"):
+class WeightedMeanSquaredError(keras.losses.Loss):
+    def __init__(self, weight_dict, reduction=keras.losses.Reduction.AUTO, name="weighted_mean_squared_error"):
         super().__init__(reduction=reduction, name=name)
         self.weight_dict = {float(k): tf.constant(v, dtype=tf.float32) for k, v in weight_dict.items()}
 
