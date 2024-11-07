@@ -15,6 +15,7 @@ from utils.get_data import get_weight_file_from_dir
 from constants import *
 from custom.callbacks import *
 # from db_generators.create_person_dict import *
+import keras
 from tensorflow.keras.callbacks import ModelCheckpoint
 
 
@@ -47,7 +48,7 @@ def objective(trial):
     keras.backend.clear_session()
 
     # Define the search space and sample parameter values
-    snc_window_size_hp = trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
+    snc_window_size_hp = 512#trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
     epoch_num =  40
     epoch_len = 5  # None
     use_pretrained_model = True  # trial.suggest_categorical('use_pretrained_model',[True, False])
@@ -63,17 +64,17 @@ def objective(trial):
     # train_ds = train_ds.take(5)
     attention_snc_model_parameters_dict = {'window_size_snc': snc_window_size_hp,
                                            'apply_tfp': False,
-                                           'J_snc': trial.suggest_int('J_snc', 5, 7),  # 5,
+                                           'J_snc': 7,#trial.suggest_int('J_snc', 5, 7),  # 5,
                                            'Q_snc': (2, 1),
                                            'undersampling': 4.4,
+                                           'scattering_max_order':1,
                                            'use_attention': False,
                                            'attention_layers_for_one_sensor': 1,
-                                           'use_sensor_attention': True,
+                                           # 'use_sensor_attention': trial.suggest_categorical('use_sensor_attention', [True, False]),
                                            'use_sensor_ordering': True,
                                            # trial.suggest_categorical('use_sensor_ordering', [True, False]),
-                                           'units': trial.suggest_int('units', 10, 20),  # 13,#15,#80,#
-                                           'conv_activation': 'relu',
-                                           # trial.suggest_categorical('conv_activation', ['linear',  'relu', ]),# trial.suggest_categorical('conv_activation', ['tanh', 'sigmoid', 'relu', 'linear']),#'relu',
+                                           'units': 6,#trial.suggest_int('units', 5, 10),  # 13,#15,#80,#
+                                           'dense_activation': 'linear',#trial.suggest_categorical('conv_activation', ['linear',  'relu', ]),# trial.suggest_categorical('conv_activation', ['tanh', 'sigmoid', 'relu', 'linear']),#'relu',
                                            'use_time_ordering': True,
                                            # trial.suggest_categorical('use_time_ordering', [True, False]),
                                            'num_heads': 3,  # trial.suggest_int('num_heads', 3, 4),#4
@@ -96,7 +97,8 @@ def objective(trial):
                                            'learning_rate': 0.0016,
                                            # 'normalization_factor': trial.suggest_float('normalization_factor', 1, 4, step=0.5),
                                            # 'weight_loss_multipliers_dict': weight_loss_dicts[loss_dict_num_hp],
-                                           'use_weighted_loss': False
+                                           'use_weighted_loss': False,
+                                           'sensor_fusion': trial.suggest_categorical('sensor_fusion', ['early', 'attention', 'mean']),
                                            }
 
     # pruning_callback = optuna.integration.tensorboard.TensorBoardCallback(trial)
@@ -111,6 +113,7 @@ def objective(trial):
     # All callbacks for this trial
     labels_to_balance = [0, 0.5, 1, 2]
     last_val_losses = []
+    last_val_losses_dict = {person:None for person in persons_for_test}
     last_mse = []
     # persons_val_loss_dict = {person: 0 for person in persons_dirs}
     model = create_attention_weight_estimation_model(**attention_snc_model_parameters_dict)
@@ -166,22 +169,13 @@ def objective(trial):
         val_ds = create_data_for_model(person_dict, snc_window_size_hp, batch_size_np, labels_to_balance, epoch_len,
                                           [person], data_mode='Test',contacts=['M'])
 
-        # a = {weight: [record for record in records if record['phase'] == 'Train'] for weight, records in person_dict[person].items()}
-        # train_ds.__getitem__(0)
-        # val_ds.__getitem__(0)
-
-        # x = train_ds.__len__()
-        # train_ds.__getitem__(0)
 
         out_callback = OutputPlotCallback(person_dict, trial_dir,
                                           samples_per_label_per_person=10,used_persons=[person], picture_name=person,data_mode='Test',
                                           phase='Train')
         callbacks = [
-            # Create a callback that saves the model's weights every 5 epochs
-
             TensorBoard(log_dir=os.path.join(trial_dir, 'tensorboard')),
             # SaveKerasModelCallback(trial_dir, f"model_trial_{trial.number}"),
-
             FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='dense', data_mode = 'Test', proj='pca',
                                      metric="euclidean", picture_name=person + 'test_dict', used_persons=[person],
                                      # considered_weights=[0,4,6,8],
@@ -197,7 +191,6 @@ def objective(trial):
                                      proj='pca',
                                      metric="euclidean", picture_name=person + 'test_dict', used_persons=[person],
                                      num_of_components=3, samples_per_label_per_person=10, phase='Train'),
-
 
             out_callback
 
@@ -220,19 +213,21 @@ def objective(trial):
         # personal_accuracy.update(out_callback.personal_accuracy)
 
         val_loss = history.history['val_loss']
+        val_mae = history.history['val_multiply_3_mae']
         # val_mse = max(
         #     [value for key, value in history.history.items() if key.startswith('val_') and key.endswith('mse')])
         last_val_loss = val_loss[-1]
-        # last_val_mse = val_mse[-1]
-        min_val_loss = min(val_loss)
+        last_val_mae = val_mae[-1]
+        # min_val_loss = min(val_loss)
         last_val_losses.append(last_val_loss)
+        last_val_losses_dict[person] = last_val_loss
         # last_mse.append(last_val_mse)
         # persons_val_loss_dict[person] = last_val_loss
 
-        # max_val_loss = max(last_val_losses)
-        # mean_val_loss = sum(last_val_losses) / len(last_val_losses)
-        # mean_val_mse = sum(last_mse) / len(last_mse)
-        # results_for_same_parameters.append(mean_val_mse)
+    max_val_loss = max(last_val_losses)
+    # mean_val_loss = sum(last_val_losses) / len(last_val_losses)
+    # mean_val_mse = sum(last_mse) / len(last_mse)
+    # results_for_same_parameters.append(mean_val_mse)
 
     # Calculate the standard deviation (sigma) of results_for_same_parameters
     sigma_results = np.std(results_for_same_parameters)
@@ -257,6 +252,10 @@ def objective(trial):
         # file.write("\n")
         file.write(f'personal second stage accuracy {personal_accuracy}')
         file.write("\n")
+        file.write(f'max val loss {max_val_loss}')
+        file.write("\n")
+        file.write(f'val losses dict {last_val_losses_dict}')
+        file.write("\n")
         file.write("\n")
 
     # max_val_loss = max(last_val_losses)
@@ -274,7 +273,7 @@ def objective(trial):
     #               samples_per_label_per_person=10, picture_name=person,
     #                             phase='train')])
 
-    return last_val_loss#mean_val_mse  # max_val_loss
+    return max_val_loss#mean_val_mse  # max_val_loss
 
 
 def logging_dirs():
@@ -293,11 +292,12 @@ def logging_dirs():
 if __name__ == "__main__":
     persons_for_train_initial_model = ['Avihoo', 'Aviner', 'Shai']
     persons_for_test = [ 'Leeor',
-
-                       'Liav', 'Daniel', 'Foad',
-                        'Asher2', 'Lee',
-                   'Ofek',
-        #'Tom', 'Guy'
+                       # 'Liav',
+                       #   'Daniel',
+                         'Foad',
+                   #      'Asher2', 'Lee',
+                   # 'Ofek',
+        'Tom', #'Guy'
                         ]
     persons_for_plot = persons_for_test
 

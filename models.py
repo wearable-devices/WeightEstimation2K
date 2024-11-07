@@ -46,10 +46,13 @@ def sensor_attention_processing(scattered_snc, units = 5, conv_activation='tanh'
 def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=False,
                                              J_snc=5, Q_snc=(2, 1),
                                              undersampling=4.8,
-                                             units=10, conv_activation='tanh', use_attention=True,
+                                             scattering_max_order=1,
+                                             units=10, dense_activation='tanh', use_attention=True,
                                              attention_layers_for_one_sensor=1,
                                              use_time_ordering=False,
-                                             use_sensor_attention=False,
+                                             # use_sensor_attention=False,
+
+                                             sensor_fusion='early',
                                              use_sensor_ordering=False,
                                              final_activation='sigmoid',
                                              num_heads=4, key_dim_for_snc=4, key_dim_for_sensor_att=4,
@@ -64,6 +67,7 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
                                              use_weighted_loss=True, normalization_factor=3,
                                              weight_loss_multipliers_dict={weight: 1 for weight in [0, 1, 2, 4, 6, 8]}
                                              ):
+    '''sensor_fusion could be 'early, attention or mean'''
     # Define inputs to the model
     input_layer_snc1 = keras.Input(shape=(window_size_snc,), name='snc_1')
     # input_layer_snc1 = tf.keras.Input(shape=(rows, cols), name='Snc1')
@@ -77,42 +81,46 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
     scattered_snc3, scattered_snc33 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)(
         input_layer_snc3)
 
-    scaterred_snc_list = [  K.squeeze(scattered_snc1, axis=-1),
-                          K.squeeze(scattered_snc2, axis=-1),
-                          K.squeeze(scattered_snc3, axis=-1)]
-    scattered_snc_list_2 = [K.squeeze(scattered_snc11, axis=-1),
-                            K.squeeze(scattered_snc22, axis=-1),
-                            K.squeeze(scattered_snc33, axis=-1)]
 
-    S_snc1 = K.concatenate((scaterred_snc_list[0], scattered_snc_list_2[0]), axis=1)
+    if scattering_max_order == 2:
+        scaterred_snc_list = [K.squeeze(scattered_snc1, axis=-1),
+                              K.squeeze(scattered_snc2, axis=-1),
+                              K.squeeze(scattered_snc3, axis=-1)]
+        scattered_snc_list_2 = [K.squeeze(scattered_snc11, axis=-1),
+                                K.squeeze(scattered_snc22, axis=-1),
+                                K.squeeze(scattered_snc33, axis=-1)]
+
+        S_snc1 = K.concatenate((scaterred_snc_list[0], scattered_snc_list_2[0]), axis=1)
+        # S_snc1 = K.transpose(S_snc1, axes=(0, 2, 1))
+        S_snc2 = K.concatenate((scaterred_snc_list[1], scattered_snc_list_2[1]), axis=1)
+        # S_snc2 = K.transpose(S_snc2, axes=(0, 2, 1))
+        S_snc3 = K.concatenate((scaterred_snc_list[2], scattered_snc_list_2[2]), axis=1)
+        # S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
+    else:
+        S_snc1 = K.squeeze(scattered_snc1, axis=-1)
+        S_snc2 = K.squeeze(scattered_snc2, axis=-1)
+        S_snc3 = K.squeeze(scattered_snc3, axis=-1)
+
     S_snc1 = K.transpose(S_snc1, axes=(0, 2, 1))
-
-    S_snc2 = K.concatenate((scaterred_snc_list[1], scattered_snc_list_2[1]), axis=1)
     S_snc2 = K.transpose(S_snc2, axes=(0, 2, 1))
-
-    S_snc3 = K.concatenate((scaterred_snc_list[2], scattered_snc_list_2[2]), axis=1)
     S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
 
-    S_snc1 = S_snc1[:, :, :20]
-    S_snc2 = S_snc2[:, :, :20]
-    S_snc3 = S_snc3[:, :, :20]
-
     # Apply Time attention
-    sensor_1 = sensor_attention_processing(S_snc1, units=units, conv_activation=conv_activation,
+    sensor_1 = sensor_attention_processing(S_snc1, units=units, conv_activation=dense_activation,
                                            attention_layers_for_one_sensor=attention_layers_for_one_sensor,
                                            num_heads=num_heads, key_dim=key_dim_for_snc,
                                            use_time_ordering=use_time_ordering, apply_tfp=apply_tfp,
                                            apply_noise=apply_noise,
                                            stddev=stddev,
-                                           sensor_num=1, use_attention=use_attention,)
-    sensor_2 = sensor_attention_processing(S_snc2, units=units, conv_activation=conv_activation,
+                                           sensor_num=1, use_attention=use_attention, )
+    sensor_2 = sensor_attention_processing(S_snc2, units=units, conv_activation=dense_activation,
                                            attention_layers_for_one_sensor=attention_layers_for_one_sensor,
                                            num_heads=num_heads, key_dim=key_dim_for_snc,
                                            use_time_ordering=use_time_ordering, apply_tfp=apply_tfp,
                                            apply_noise=apply_noise,
                                            stddev=stddev,
                                            sensor_num=2, use_attention=use_attention)
-    sensor_3 = sensor_attention_processing(S_snc3, units=units, conv_activation=conv_activation,
+    sensor_3 = sensor_attention_processing(S_snc3, units=units, conv_activation=dense_activation,
                                            attention_layers_for_one_sensor=attention_layers_for_one_sensor,
                                            num_heads=num_heads, key_dim=key_dim_for_snc,
                                            use_time_ordering=use_time_ordering, apply_tfp=apply_tfp,
@@ -124,9 +132,18 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
     x2 = sensor_2
     x3 = sensor_3
 
-    if use_sensor_attention:
-        sensor_conc = K.concatenate([K.expand_dims(x1, axis=1), K.expand_dims(x2, axis=1), K.expand_dims(x3, axis=1)],
+    sensor_conc = K.concatenate([K.expand_dims(x1, axis=1), K.expand_dims(x2, axis=1), K.expand_dims(x3, axis=1)],
                                 axis=1)
+
+    if sensor_fusion == 'early':
+        fused_x = keras.layers.Flatten()(sensor_conc)
+        x = keras.layers.Dense(units, activation=dense_activation, name=f'dense_1')(fused_x)
+        x = keras.layers.Dropout(0.1)(x)
+        x1 = x
+        x2 = x
+        x3 = x
+        mean = x
+    elif sensor_fusion == 'attention':
         if use_sensor_ordering:
             sensor_attention_layer = OrderedAttention(num_heads=num_sensor_attention_heads,
                                                       key_dim=key_dim_for_sensor_att, scale_activation=scale_activation)
@@ -137,13 +154,9 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
         x1 = keras.layers.Lambda(lambda x: x[:, 0, :], name='sensor_1_attended')(attended)
         x2 = keras.layers.Lambda(lambda x: x[:, 1, :], name='sensor_2_attended')(attended)
         x3 = keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended')(attended)
-
         mean = K.mean(attended, axis=1)
-    else:
-
-        x1 = keras.layers.Dense(units, activation='softmax')(x1)
-        x2 = keras.layers.Dense(units, activation='softmax')(x2)
-        x3 = keras.layers.Dense(units, activation='softmax')(x3)
+    else: # sensor_fusion == 'mean'
+        mean = K.mean(sensor_conc, axis=1)
 
     if use_probabilistic_app:
         smpl_rate = prob_param['smpl_rate']
@@ -189,14 +202,8 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
         out_1 = max_weight * final_dense_layer(x1)
         out_2 = max_weight * final_dense_layer(x2)
         out_3 = max_weight * final_dense_layer(x3)
-        if use_sensor_attention:
-            out = max_weight * final_dense_layer(mean)
-        else:
 
-            out = tf.reduce_mean(
-                tf.concat([tf.expand_dims(out_1, axis=2), tf.expand_dims(out_2, axis=2), tf.expand_dims(out_3, axis=2)],
-                          axis=2), axis=2)
-            out = keras.layers.Flatten()(out)
+        out = max_weight * final_dense_layer(mean)
 
     inputs = {'snc_1': input_layer_snc1, 'snc_2': input_layer_snc2, 'snc_3': input_layer_snc3}
     model = keras.Model(inputs=inputs,
@@ -204,32 +211,32 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
                            )
     if compile:
         opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
-        if use_sensor_attention:
-            if use_weighted_loss:
-                model.compile(loss=[None, WeightedMeanSquaredError(weight_loss_multipliers_dict),
-                                    WeightedMeanSquaredError(weight_loss_multipliers_dict),
-                                    WeightedMeanSquaredError(weight_loss_multipliers_dict)],
-                              metrics=['mae', 'mse'],
-                              optimizer=opt)
-            if use_probabilistic_app:
-                model.compile(loss=[None, CustomSquaredLoss(max_weight, smpl_rate),
-                                    CustomSquaredLoss(max_weight, smpl_rate),
-                                    CustomSquaredLoss(max_weight, smpl_rate)],
-                              metrics=['mae', 'mse'],
-                              optimizer=opt)
-            else:
-                model.compile(loss=[None, keras.losses.MeanSquaredError(),
-                                    keras.losses.MeanSquaredError(),
-                                    keras.losses.MeanSquaredError()],
-                              metrics=[
-                                  ['mae', 'mse'],  # metrics for first output
-                                  None,  # no metrics for second output
-                                  None,  # no metrics for third output
-                                  None  # no metrics for fourth output
-                              ],
-                              optimizer=opt)
+
+        if use_weighted_loss:
+            model.compile(loss=[None, WeightedMeanSquaredError(weight_loss_multipliers_dict),
+                                WeightedMeanSquaredError(weight_loss_multipliers_dict),
+                                WeightedMeanSquaredError(weight_loss_multipliers_dict)],
+                          metrics=['mae', 'mse'],
+                          optimizer=opt)
+        if use_probabilistic_app:
+            model.compile(loss=[None, CustomSquaredLoss(max_weight, smpl_rate),
+                                CustomSquaredLoss(max_weight, smpl_rate),
+                                CustomSquaredLoss(max_weight, smpl_rate)],
+                          metrics=['mae', 'mse'],
+                          optimizer=opt)
         else:
-            loss_fn = FlexibleCrossEntropy(max_weight, 80)
-            model.compile(optimizer=opt, loss=[None, loss_fn, loss_fn, loss_fn], metrics=['accuracy'])
+            model.compile(loss=[None, keras.losses.MeanSquaredError(),
+                                keras.losses.MeanSquaredError(),
+                                keras.losses.MeanSquaredError()],
+                          metrics=[
+                              ['mae', 'mse'],  # metrics for first output
+                              None,  # no metrics for second output
+                              None,  # no metrics for third output
+                              None  # no metrics for fourth output
+                          ],
+                          optimizer=opt)
+        # else:
+        #     loss_fn = FlexibleCrossEntropy(max_weight, 80)
+        #     model.compile(optimizer=opt, loss=[None, loss_fn, loss_fn, loss_fn], metrics=['accuracy'])
 
     return model

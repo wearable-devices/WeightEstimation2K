@@ -191,9 +191,9 @@ def plot_feature_space(persons_dict, num_of_components=2):
     # Color map for labels
     color_map = {
         0: 'red',
-        500: 'pink',
-        1000: 'blue',
-        2000: 'green',
+        0.5: 'pink',
+        1: 'blue',
+        2: 'green',
         4: 'yellow',
         6: 'brown',
         8: 'black'
@@ -201,9 +201,9 @@ def plot_feature_space(persons_dict, num_of_components=2):
 
     color_map_2 = {
         0: 'crimson',
-        500: 'pink',
-        1000: 'navy',
-        2000: 'forestgreen',  # Changed from 'forest_green' to 'forestgreen'
+        0.5: 'pink',
+        1: 'navy',
+        2: 'forestgreen',  # Changed from 'forest_green' to 'forestgreen'
         4: 'gold',
         6: 'sienna',
         8: 'dimgray'  # Changed from 'charcoal' to 'dimgray' as charcoal isn't a standard CSS color

@@ -54,7 +54,7 @@ if __name__ == "__main__":
     proj_dict  = apply_projection_to_dict(output_dict, n_components=3, perplexity=10, random_state=42, proj='pca',
                              metric="euclidean")
 
-    plot_feature_space(proj_dict, num_of_components=3)
+    # plot_feature_space(proj_dict, num_of_components=3)
 
     ttt=1
 
