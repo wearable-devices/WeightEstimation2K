@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt
 
 # from stam import data_mode
 import keras.ops as K
+
+# from stam import output_dict
 from utils.maps import filter_dict_by_keys
 
 class SaveKerasModelCallback(keras.callbacks.Callback):
@@ -348,12 +350,17 @@ class OutputPlotCallback(keras.callbacks.Callback):
                         persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
                                                       for tensor in persons_labeled_input_dict.values()]
                         persons_input_data = persons_input_data + persons_labeled_input_data
-                    predictions = self.model([persons_input_data])[0]
+                    try:
+                        predictions = self.model([persons_input_data])[0]
+                    except:
+                        predictions = self.model([persons_input_data])['weight_output']
+                        # predictions = self.model([persons_input_data])['gaussian_output']
                     # predictions = tf.squeeze(tf.keras.layers.Flatten()(predictions), axis=-1)
                     self.output_dict[person][weight] = predictions
                 # tf.print('weight', weight)
                 #
                 # tf.print('predictions', predictions.shape, predictions)
+                # tf.print('output_dict', self.output_dict)
 
     def plot_feature_space_optuna(self):
         # Color map for labels

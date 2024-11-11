@@ -98,8 +98,37 @@ def objective(trial):
                                            # 'normalization_factor': trial.suggest_float('normalization_factor', 1, 4, step=0.5),
                                            # 'weight_loss_multipliers_dict': weight_loss_dicts[loss_dict_num_hp],
                                            'use_weighted_loss': False,
-                                           'sensor_fusion': trial.suggest_categorical('sensor_fusion', ['early', 'attention', 'mean']),
+                                           'sensor_fusion': 'attention',# trial.suggest_categorical('sensor_fusion', ['early', 'attention', 'mean']),
                                            }
+
+    attention_distr_snc_model_parameters_dict = {'window_size_snc': 512,
+                                                 'J_snc': 7,  # trial.suggest_int('J_snc', 5, 7),  # 5,
+                                                 'Q_snc': (2, 1),
+                                                 'undersampling': 4.4,
+                                                 'scattering_max_order': 1,
+                                                 'use_attention': False,
+                                                 'attention_layers_for_one_sensor': 1,
+                                                 'use_sensor_ordering': True,
+                                                 'units': 6,
+                                                 'dense_activation': 'linear',
+                                                 'smpl_rate': 11,
+                                                 # trial.suggest_categorical('conv_activation', ['linear',  'relu', ]),# trial.suggest_categorical('conv_activation', ['tanh', 'sigmoid', 'relu', 'linear']),#'relu',
+                                                 'use_time_ordering': True,
+                                                 'num_heads': 3,
+                                                 'key_dim_for_snc': 3,
+                                                 'key_dim_for_sensor_att': 16,
+                                                 'num_sensor_attention_heads': 1,
+
+                                                 'max_sigma': 0.6,
+                                                 'final_activation': 'sigmoid',
+                                                 'apply_noise': False,
+                                                 'max_weight': 2.5,
+                                                 'optimizer': 'Adam',
+                                                 'weight_decay': 0,
+                                                 'learning_rate': 0.0016,
+                                                 'loss_balance': trial.suggest_float('weight_decay', 0.0, 1, step=0.1),
+                                                 'sensor_fusion': 'attention',
+                                                 }
 
     # pruning_callback = optuna.integration.tensorboard.TensorBoardCallback(trial)
     trial_dir = trials_dir / f"trial_{trial.number}"  # Specific trial
@@ -114,9 +143,11 @@ def objective(trial):
     labels_to_balance = [0, 0.5, 1, 2]
     last_val_losses = []
     last_val_losses_dict = {person:None for person in persons_for_test}
+    last_val_maes = []
+    last_val_maes_dict = {person: None for person in persons_for_test}
     last_mse = []
     # persons_val_loss_dict = {person: 0 for person in persons_dirs}
-    model = create_attention_weight_estimation_model(**attention_snc_model_parameters_dict)
+    model = create_attention_weight_distr_estimation_model(**attention_distr_snc_model_parameters_dict)
     # model = create_rms_weight_estimation_model(**attention_snc_model_parameters_dict)
     model.summary()
     total_params, trainable_params, non_trainable_params = count_parameters(model)
@@ -221,10 +252,14 @@ def objective(trial):
         # min_val_loss = min(val_loss)
         last_val_losses.append(last_val_loss)
         last_val_losses_dict[person] = last_val_loss
+
+        last_val_maes.append(last_val_mae)
+        last_val_maes_dict[person] = last_val_mae
         # last_mse.append(last_val_mse)
         # persons_val_loss_dict[person] = last_val_loss
 
     max_val_loss = max(last_val_losses)
+    max_val_mae = max(last_val_maes)
     # mean_val_loss = sum(last_val_losses) / len(last_val_losses)
     # mean_val_mse = sum(last_mse) / len(last_mse)
     # results_for_same_parameters.append(mean_val_mse)
@@ -256,6 +291,10 @@ def objective(trial):
         file.write("\n")
         file.write(f'val losses dict {last_val_losses_dict}')
         file.write("\n")
+        file.write(f'max val mae {max_val_mae}')
+        file.write("\n")
+        file.write(f'val maees dict {last_val_maes_dict}')
+        file.write("\n")
         file.write("\n")
 
     # max_val_loss = max(last_val_losses)
@@ -273,7 +312,7 @@ def objective(trial):
     #               samples_per_label_per_person=10, picture_name=person,
     #                             phase='train')])
 
-    return max_val_loss#mean_val_mse  # max_val_loss
+    return max_val_mae#max_val_loss#mean_val_mse  # max_val_loss
 
 
 def logging_dirs():
@@ -292,11 +331,11 @@ def logging_dirs():
 if __name__ == "__main__":
     persons_for_train_initial_model = ['Avihoo', 'Aviner', 'Shai']
     persons_for_test = [ 'Leeor',
-                       # 'Liav',
-                       #   'Daniel',
+                        'Liav',
+                          'Daniel',
                          'Foad',
-                   #      'Asher2', 'Lee',
-                   # 'Ofek',
+                         'Asher2', 'Lee',
+                    'Ofek',
         'Tom', #'Guy'
                         ]
     persons_for_plot = persons_for_test
