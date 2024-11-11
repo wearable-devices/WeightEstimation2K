@@ -123,7 +123,7 @@ class GaussianCrossEntropyLoss(keras.losses.Loss):
         # tf.print('y_pred', y_pred.shape)
         # tf.print('y_true', y_true.shape)
         pred_mu = y_pred[:, 0]
-        pred_sigma = y_pred[:, 0]
+        pred_sigma = y_pred[:, 1]
 
         # tf.print('y_true.shape',y_true.shape)
         # tf.print('y_pred.shape', y_pred.shape)

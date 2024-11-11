@@ -101,7 +101,7 @@ def objective(trial):
                                            'sensor_fusion': 'attention',# trial.suggest_categorical('sensor_fusion', ['early', 'attention', 'mean']),
                                            }
 
-    attention_distr_snc_model_parameters_dict = {'window_size_snc': 512,
+    attention_distr_snc_model_parameters_dict = {'window_size_snc': snc_window_size_hp,
                                                  'J_snc': 7,  # trial.suggest_int('J_snc', 5, 7),  # 5,
                                                  'Q_snc': (2, 1),
                                                  'undersampling': 4.4,
@@ -111,7 +111,7 @@ def objective(trial):
                                                  'use_sensor_ordering': True,
                                                  'units': 6,
                                                  'dense_activation': 'linear',
-                                                 'smpl_rate': 11,
+                                                 'smpl_rate': 9,
                                                  # trial.suggest_categorical('conv_activation', ['linear',  'relu', ]),# trial.suggest_categorical('conv_activation', ['tanh', 'sigmoid', 'relu', 'linear']),#'relu',
                                                  'use_time_ordering': True,
                                                  'num_heads': 3,
@@ -122,11 +122,11 @@ def objective(trial):
                                                  'max_sigma': 0.6,
                                                  'final_activation': 'sigmoid',
                                                  'apply_noise': False,
-                                                 'max_weight': 2.5,
+                                                 'max_weight': 2.1,
                                                  'optimizer': 'Adam',
                                                  'weight_decay': 0,
                                                  'learning_rate': 0.0016,
-                                                 'loss_balance': trial.suggest_float('weight_decay', 0.0, 1, step=0.1),
+                                                 'loss_balance': trial.suggest_float('loss_balance', 0.0, 1, step=0.1),
                                                  'sensor_fusion': 'attention',
                                                  }
 
@@ -244,7 +244,7 @@ def objective(trial):
         # personal_accuracy.update(out_callback.personal_accuracy)
 
         val_loss = history.history['val_loss']
-        val_mae = history.history['val_multiply_3_mae']
+        val_mae = history.history['weight_output_mae']
         # val_mse = max(
         #     [value for key, value in history.history.items() if key.startswith('val_') and key.endswith('mse')])
         last_val_loss = val_loss[-1]

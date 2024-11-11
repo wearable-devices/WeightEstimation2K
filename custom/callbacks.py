@@ -143,7 +143,7 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
                                                                     perplexity=30, random_state=42, proj=self.proj,
                                                                     metric=self.metric)
         print(f'Feature space for layer {self.layer_name} is calculated')
-        print(self.projected_layer_output_dict)
+        # print(self.projected_layer_output_dict)
         # except:
         #     print('Problem with layer', self.layer_name)
 

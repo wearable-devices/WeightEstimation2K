@@ -1,4 +1,5 @@
 import tensorflow as tf
+
 from custom.layers import *
 import keras.ops as K
 import keras
@@ -372,6 +373,11 @@ def create_attention_weight_distr_estimation_model(window_size_snc=306,
         x2 = keras.layers.Lambda(lambda x: x[:, 1, :], name='sensor_2_attended')(attended)
         x3 = keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended')(attended)
         mean = K.mean(attended, axis=1)
+        variance_evaluation_layer = keras.layers.Conv2D(filters=3,kernel_size=(3,3), strides=(1, 1),)
+        score_matrix = K.transpose(sensor_score_matrix, axes=(0,2,3,1))
+        coeff_for_sigma = variance_evaluation_layer(score_matrix)
+        coeff_for_sigma = keras.layers.Flatten()(coeff_for_sigma)
+        coeff_for_sigma = keras.layers.Softmax(axis=-1)(coeff_for_sigma)
 
 
     else: # sensor_fusion == 'mean'
@@ -379,19 +385,17 @@ def create_attention_weight_distr_estimation_model(window_size_snc=306,
 
 
     final_dense_layer = keras.layers.Dense(1, activation=final_activation, name='final_dense')
-    variance_layer_1 = keras.layers.Dense(1, activation='relu', name='variance_layer_1')
-    variance_layer_2 = keras.layers.Dense(1, activation='sigmoid', name='variance_layer_2')
-
-    # out_1 = max_weight * final_dense_layer(x1)
-    # out_2 = max_weight * final_dense_layer(x2)
-    # out_3 = max_weight * final_dense_layer(x3)
+    variance_layer_1 = keras.layers.Dense(1, activation='sigmoid', name='variance_layer_1')
+    # variance_layer_2 = keras.layers.Dense(1, activation='sigmoid', name='variance_layer_2')
 
     out = max_weight * final_dense_layer(mean)
 
-    conf_1 = variance_layer_1(x1)
-    conf_2 = variance_layer_1(x2)
-    conf_3 = variance_layer_1(x3)
-    sigma = max_sigma * variance_layer_2(K.concatenate([conf_1, conf_2,conf_3], axis = 1))
+    conf_1 =max_sigma* variance_layer_1(x1)
+    conf_2 = max_sigma* variance_layer_1(x2)
+    conf_3 = max_sigma* variance_layer_1(x3)
+    conc_sigma = K.concatenate([conf_1, conf_2, conf_3], axis = -1)
+    # sigma = max_sigma * variance_layer_2(K.concatenate([conf_1, conf_2,conf_3], axis = 1))
+    sigma =keras.layers.Dot(axes=1)([coeff_for_sigma, conc_sigma])
 
     # Create a single output that combines both
     combined_output = keras.layers.Concatenate(name='gaussian_output')([out, sigma])
