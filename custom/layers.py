@@ -379,7 +379,7 @@ class SEMGScatteringTransform(keras.layers.Layer):
                  sampling_rate=2000,  # Default sampling rate for sEMG
                  f_powerline=55,  # Power line interference frequencies
                  f_semg=(150, 450),  # Main sEMG band
-                 undersampling=1,support = 128,
+                 undersampling=1,#support = 128,
                  dc_component=False,
                  **kwargs):
         super(SEMGScatteringTransform, self).__init__(**kwargs)
@@ -389,7 +389,7 @@ class SEMGScatteringTransform(keras.layers.Layer):
         self.f_semg = f_semg
         self.undersampling = undersampling
         self.dc_component = dc_component
-        self.support = support
+        # self.support = support
 
     def morlet_filter_bank(self, N):
         """
@@ -400,7 +400,7 @@ class SEMGScatteringTransform(keras.layers.Layer):
         psi2_f = []
 
         # Calculate frequency bins
-        freqs = np.fft.fftfreq(128) * self.sampling_rate
+        freqs = np.fft.fftfreq(N) * self.sampling_rate
 
         # First order filters: Split into power line and sEMG regions
         # n_powerline_filters = 1  # Filters for power line interference
@@ -449,13 +449,13 @@ class SEMGScatteringTransform(keras.layers.Layer):
 
     def build(self, input_shape):
 
-        # self.support = input_shape
+        self.filter_len = 128
         # Generate sEMG-optimized filters
-        phi_f, psi1_f, psi2_f = self.morlet_filter_bank(self.support)
+        phi_f, psi1_f, psi2_f = self.morlet_filter_bank(self.filter_len)
 
         # Initialize filter banks
-        self.filter_bank_real_l1 = np.zeros((self.support, len(psi1_f)))
-        self.filter_bank_imag_l1 = np.zeros((self.support, len(psi1_f)))
+        self.filter_bank_real_l1 = np.zeros((self.filter_len, len(psi1_f)))
+        self.filter_bank_imag_l1 = np.zeros((self.filter_len, len(psi1_f)))
 
         # Convert filters to time domain
         for ii in range(len(psi1_f)):
@@ -470,16 +470,11 @@ class SEMGScatteringTransform(keras.layers.Layer):
 
         # Store dimensions for scattering coefficients
         self.proj0_height = len(psi1_f)
-        # self.resize_height = self.proj0_height + 1 if self.dc_component else self.proj0_height
+        self.resize_height = self.proj0_height + 1 if self.dc_component else self.proj0_height
 
         super(SEMGScatteringTransform, self).build(input_shape)
 
-    def total_combinations_second_layer(self, J, Q):
-        n = J * Q[1] - 1
-        total = 0
-        for k in range(1, n + 1):
-            total += k * (k + 1) // 2
-        return total
+
 
     def call(self, x):
         # First order scattering
@@ -500,6 +495,16 @@ class SEMGScatteringTransform(keras.layers.Layer):
         # Calculate phase
         phase = tf.math.atan2(imag_response, real_response)
 
+        # paddings = tf.constant([[0, 0], [0, 0], [int(self.support / 2), int(self.support / 2)]])
+        magnitude_resized = keras.layers.Resizing( int(magnitude.shape[-2]/self.undersampling), self.resize_height)(
+            tf.expand_dims(magnitude, axis=-1))
+
+        phase_resized = keras.layers.Resizing( int(magnitude.shape[-2]/self.undersampling), self.resize_height)(
+                tf.expand_dims(phase, axis=-1))
+
+        magnitude_resized = tf.squeeze(magnitude_resized, axis=-1)
+        phase_resized = tf.squeeze(phase_resized, axis=-1)
+
         # if self.dc_component:
         #     # DC component (low-pass) - only affects magnitude
         #     low_pass_filter = tf.exp(
@@ -513,7 +518,7 @@ class SEMGScatteringTransform(keras.layers.Layer):
         #     phase_padding = tf.zeros_like(dc_component)
         #     phase = tf.concat([phase_padding, phase], axis=-1)
 
-        return magnitude, phase
+        return magnitude_resized, phase_resized
 
     def plot_filter_bank(self):
         """

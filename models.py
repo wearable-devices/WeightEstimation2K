@@ -20,6 +20,15 @@ def get_optimizer(optimizer = 'LAMB',learning_rate=0.001, weight_decay=0.0):
 
     return opt
 
+def get_loss(loss='mse'):
+    if loss == 'mse':
+        loss = keras.losses.MeanSquaredError()
+    elif loss == 'Huber':
+        loss = keras.losses.Huber()
+    return loss
+
+
+
 
 def sensor_attention_processing(scattered_snc, units = 5, conv_activation='tanh',
                                 use_attention=True, apply_tfp=False,
@@ -663,6 +672,7 @@ def create_one_sensors_weight_estimation_model(sensor_num=2, window_size_snc=306
                                              # apply_noise=True, stddev=0.1,
                                              optimizer='Adam', learning_rate=0.0016,
                                              weight_decay=0.0, max_weight=3.0, compile=True,
+                                               loss = 'mse',
                                              ):
     '''sensor_fusion could be 'early, attention or mean'''
     # Define inputs to the model
@@ -730,10 +740,9 @@ def create_one_sensors_weight_estimation_model(sensor_num=2, window_size_snc=306
                            )
     if compile:
         opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
+        model_loss = get_loss(loss)
 
-
-        model.compile(loss= 'mse',
-
+        model.compile(loss= model_loss,
                       metrics=
                           ['mae', 'mse'],
                       optimizer=opt,

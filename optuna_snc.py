@@ -48,8 +48,8 @@ def objective(trial):
     keras.backend.clear_session()
 
     # Define the search space and sample parameter values
-    snc_window_size_hp = trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
-    addition_weight_hp = trial.suggest_float('addition_weight', 0.0, 0.5, step=0.1)
+    snc_window_size_hp = 512#trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
+    addition_weight_hp = 0.1#trial.suggest_float('addition_weight', 0.0, 0.5, step=0.1)
     epoch_num =  40
     epoch_len = 5  # None
     use_pretrained_model = True  # trial.suggest_categorical('use_pretrained_model',[True, False])
@@ -135,17 +135,19 @@ def objective(trial):
 
     average_sensors_weight_estimation_model_dict = {'window_size_snc': snc_window_size_hp,
                                                     'J_snc': 7, 'Q_snc': (2, 1),
-                                                    'undersampling': 4.8,
+                                                    'undersampling':2,# trial.suggest_float('undersampling', 1, 5, step=0.2),#4.8,
                                                     'scattering_max_order': 1,
-                                                    'units': 10,
-                                                    'dense_activation': trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
+                                                    'units':10,# trial.suggest_int('units', 5, 15),
+                                                    'dense_activation': 'linear',#trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
                                                     'use_attention': False,
                                                     'attention_layers_for_one_sensor': 1,
                                                     'use_time_ordering': False,
-                                                    'scattering_type': 'old',
+                                                    'scattering_type': trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
                                                     'final_activation': 'tanh',
                                                     'optimizer': 'Adam', 'learning_rate': 0.0016,
-                                                    'weight_decay': 0.0, 'max_weight': 2+addition_weight_hp, 'compile': True}
+                                                    'weight_decay': 0.0, 'max_weight': 2+addition_weight_hp, 'compile': True,
+                                                    'loss': 'Huber',# trial.suggest_categorical('loss', ['Huber', 'mse'])
+                                                     }
 
     # pruning_callback = optuna.integration.tensorboard.TensorBoardCallback(trial)
     trial_dir = trials_dir / f"trial_{trial.number}"  # Specific trial
@@ -293,9 +295,8 @@ def objective(trial):
     # Create the full file path
     file_path = str(trials_dir) + file_name
 
-    # Open the file in write mode
+    # Write information to the file
     with open(file_path, "a") as file:
-        # Write information to the file
         file.write(f"trial{trial.number}\n")
         file.write(f"window size {snc_window_size_hp}\n")
         file.write(f"model  {model_name} total params  "
@@ -310,7 +311,6 @@ def objective(trial):
         file.write("\n")
         # file.write(f'max val loss {max([metrics['mse'] for person,metrics in personal_metrics_dict.items()])}')
         # file.write("\n")
-
         file.write("\n")
         file.write("\n")
 
