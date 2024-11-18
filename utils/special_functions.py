@@ -249,41 +249,15 @@ if __name__ == "__main__":
     # batch = train_ds.__getitem__(0)
     # support_labels = batch[0][6]
 
-    # prob_support_labels = transform_tensor_with_gaussian(support_labels, smpl_rate, 8, sigma=sigma)#[0, :, :]
-    c = 8 + 0.1
-    w = 1
-    # Create a range of x values
-    x = tf.linspace(0, 8, 100)
 
-    # Plot the results
-    # plt.figure(figsize=(10, 6))
-    # for w in range(int(c)+1):
-    #     y = gaussian(logit(x / c), mu=logit(w / c), sigma=sigma)
-    #     plt.plot(x, y)
-    #
-    # plt.legend()
-    # plt.title('Normal Distribution (μ=0, σ=1)')
-    # plt.xlabel('x')
-    # plt.ylabel('Probability Density')
-    # plt.grid(True)
-    # plt.show()
 
-    weights = tf.constant([[[0], [0.5], [1], [2.5]]])  # shape: (1, 4, 1)
+
+
+    weights = tf.constant([[[0], [0.5], [1], [2]]])  # shape: (1, 4, 1)
     max_weight = 2.5
     # new_tensor = transform_tensor_with_gaussian(weights, smpl_rate, max_weight, sigma=0.5)
     x_values = tf.linspace(0.0, max_weight, smpl_rate)
-    # # Plot the results
-    # plt.figure(figsize=(10, 6))
-    # for w in range(4):
-    #     y = new_tensor[0,w,:]
-    #     plt.plot(x_values, y)
-    #
-    # plt.legend()
-    # plt.title('Normal Distribution (μ=0, σ=1)')
-    # plt.xlabel('x')
-    # plt.ylabel('Probability Density')
-    # plt.grid(True)
-    # plt.show()
+
 
     # Create sample input
     batch_size = 3
@@ -301,13 +275,26 @@ if __name__ == "__main__":
     distributions_not_normalized = batch_gaussian_distribution(input_data, smpl_rate=100, max_weight=max_weight,
                                                            normalize=False)
     # Create figure and axes with 2 rows, 3 columns
-    fig, axes = plt.subplots(2, 1, figsize=(15, 8))
-    for w in range(input_data.shape[0]):
-        y_norm = distributions_normalized[w, :]
-        axes[0].plot(x_values, y_norm)
-
-        y_not_norm = distributions_not_normalized[w, :]
-        axes[1].plot(x_values, y_not_norm)
+    # fig, axes = plt.subplots(2, 1, figsize=(15, 8))
+    # for w in range(input_data.shape[0]):
+    #     y_norm = distributions_normalized[w, :]
+    #     axes[0].plot(x_values, y_norm)
+    #
+    #     y_not_norm = distributions_not_normalized[w, :]
+    #     axes[1].plot(x_values, y_not_norm)
+    #
+    # plt.legend()
+    # plt.title('Normal Distribution (μ=0, σ=1)')
+    # plt.xlabel('x')
+    # plt.ylabel('Probability Density')
+    # plt.grid(True)
+    # plt.show()
+    mu = 2
+    sigma = 0.6
+    y = gaussian(x_values, mu, sigma)
+    # Create figure and axes with 2 rows, 3 columns
+    plt.figure(figsize=(10, 6))  # Set figure size
+    plt.plot(x_values, y)
 
     plt.legend()
     plt.title('Normal Distribution (μ=0, σ=1)')
@@ -315,7 +302,6 @@ if __name__ == "__main__":
     plt.ylabel('Probability Density')
     plt.grid(True)
     plt.show()
-
 
 
 

@@ -1,10 +1,12 @@
-from models import create_attention_weight_distr_estimation_model
+from models import (create_attention_weight_distr_estimation_model, create_early_fusion_weight_estimation_model,
+                    create_average_sensors_weight_estimation_model,create_one_sensors_weight_estimation_model)
 from db_generators.generators import create_data_for_model
 from constants import *
 
 from utils.get_data import get_weight_file_from_dir
 from keras.callbacks import TensorBoard
-from custom.callbacks import OutputPlotCallback
+from keras.callbacks import ModelCheckpoint
+from custom.callbacks import OutputPlotCallback, SaveKerasModelCallback, FeatureSpacePlotCallback
 import os
 from pathlib import Path
 from datetime import datetime
@@ -49,7 +51,7 @@ def create_distribution(mu, sigma, max_weight = 2, smpl_rate=11):
     return distribution#tf.nn.softmax(distribution, axis=-1)
 if __name__ == "__main__":
     logs_root_dir, log_dir= logging_dirs()
-    attention_distr_snc_model_parameters_dict = {'window_size_snc': 512,
+    attention_distr_snc_model_parameters_dict = {'window_size_snc': 512, 'scattering_type':'old',
                                            'J_snc': 7,  # trial.suggest_int('J_snc', 5, 7),  # 5,
                                            'Q_snc': (2, 1),
                                            'undersampling': 4.4,
@@ -74,12 +76,32 @@ if __name__ == "__main__":
                                            'optimizer': 'Adam',
                                            'weight_decay': 0,
                                            'learning_rate': 0.0016,
-                                                 'loss_balance':0.5,
+                                                 'loss_balance':1,
                                            'sensor_fusion': 'attention',
                                            }
 
-    model = create_attention_weight_distr_estimation_model(**attention_distr_snc_model_parameters_dict)
+    average_sensors_weight_estimation_model_dict = {'window_size_snc':512,
+                                             'J_snc':7, 'Q_snc': (2, 1),
+                                             'undersampling':4.8,
+                                             'scattering_max_order':1,
+                                             'units':10, 'dense_activation':'linear',
+                                                    'use_attention':False,
+                                             'attention_layers_for_one_sensor':1,
+                                             'use_time_ordering':False,
+                                             # use_sensor_attention=False,
+                                            'scattering_type':'old',
 
+                                             'final_activation':'tanh',
+                                             # 'num_heads':4, 'key_dim_for_snc':4,
+
+                                             # 'apply_noise':True, stddev=0.1,
+                                             'optimizer':'Adam', 'learning_rate':0.0016,
+                                             'weight_decay':0.0, 'max_weight':2, 'compile':True}
+
+    # model = create_attention_weight_distr_estimation_model(**attention_distr_snc_model_parameters_dict)
+    # model = create_early_fusion_weight_estimation_model(optimizer='Adam', window_size_snc=512)
+    # model = create_average_sensors_weight_estimation_model(**average_sensors_weight_estimation_model_dict)
+    model = create_one_sensors_weight_estimation_model(sensor_num=1, **average_sensors_weight_estimation_model_dict)
     model.summary()
     print(model.output_names)
 
@@ -88,55 +110,88 @@ if __name__ == "__main__":
     person_dict = get_weight_file_from_dir(file_dir)
     labels_to_balance = [0, 0.5, 1, 2]
     epoch_len = 5
-    persons_for_train_initial_model = ['Leeor']#['Avihoo', 'Aviner', 'Shai']
+    persons_for_train_initial_model = ['Leeor']#,'Avihoo', 'Aviner', 'Shai']
     train_ds = create_data_for_model(person_dict, 512, 1024, labels_to_balance, epoch_len,
                                      used_persons=persons_for_train_initial_model, data_mode='Train')
-    val_ds = train_ds
+    val_ds = create_data_for_model(person_dict, 512, 1024, labels_to_balance, epoch_len,
+                                     used_persons=persons_for_train_initial_model, data_mode='Test')
 
-    out_callback = OutputPlotCallback(person_dict, log_dir,
-                                      samples_per_label_per_person=10, used_persons=['Leeor'], picture_name='Leeor',
+    for person in persons_for_train_initial_model:
+        print(f'Working with {person}')
+        out_callback = OutputPlotCallback(person_dict, log_dir,
+                                      samples_per_label_per_person=10, output_num=0, used_persons=[person], picture_name=person+'0',
                                       data_mode='Test',
                                       phase='test')
-    history = model.fit(
-        train_ds,
-        batch_size=BATCH_SIZE,
-        callbacks=[out_callback,
-            TensorBoard(log_dir=os.path.join(log_dir, 'tensorboard')),
-        ],
-        epochs=30,
-        validation_data=val_ds,
-        verbose=1,
-    )
+        history = model.fit(
+            train_ds,
+            batch_size=BATCH_SIZE,
+            callbacks=[out_callback,
+                       # OutputPlotCallback(person_dict, log_dir,
+                       #                    samples_per_label_per_person=10, output_num=1, used_persons=[person],
+                       #                    picture_name=person + '1',
+                       #                    data_mode='Test',
+                       #                    phase='test'),
+                       # OutputPlotCallback(person_dict, log_dir,
+                       #                    samples_per_label_per_person=10, output_num=2, used_persons=[person],
+                       #                    picture_name=person + '2',
+                       #                    data_mode='Test',
+                       #                    phase='test'),
+                       # OutputPlotCallback(person_dict, log_dir,
+                       #                    samples_per_label_per_person=10, output_num=3, used_persons=[person],
+                       #                    picture_name=person + '3',
+                       #                    data_mode='Test',
+                       #                    phase='test'),
+                TensorBoard(log_dir=os.path.join(log_dir, 'tensorboard')),
+                       # ModelCheckpoint(
+                       #     filepath=os.path.join(log_dir,
+                       #                           f"pre_trained_model__epoch_{{epoch:03d}}.weights.h5"),
+                       #     # Added .weights.h5
+                       #     verbose=1,
+                       #     save_weights_only=True,
+                       #     save_freq='epoch'),
+                       SaveKerasModelCallback(log_dir, f"model_epoch{{epoch:03d}}", phase='train'),
+                       # FeatureSpacePlotCallback(person_dict, log_dir, layer_name='dense_1', data_mode='Test', proj='pca',
+                       #                          metric="euclidean", picture_name_prefix=person + 'test_dict' + f'epoch{{epoch:03d}}',
+                       #                          used_persons=[person],
+                       #                          num_of_components=3, samples_per_label_per_person=10, phase='test'),
+                       #
+                       # OutputPlotCallback(person_dict, log_dir,
+                       #                    samples_per_label_per_person=10, used_persons=[person], picture_name=person+'train',
+                       #                    data_mode='Train',
+                       #                    phase='test')
 
-    print(history.history.keys())
+            ],
+            epochs=3,
+            validation_data=val_ds,
+            verbose=1,
+        )
+
+        # n_samples = 5
+
+        print(history.history.keys())
+        print(history.history)
+        # After model.fit
+        metrics_values = model.evaluate(
+            val_ds,
+            # steps=n_samples,  # Use the same number of steps as in training
+            # verbose=1
+            return_dict=True
+        )
+
+        # Since evaluate returns a list of metrics in order of model.metrics_names
+        print("Metrics names:", model.metrics_names)
+        print("Metrics values:", metrics_values)
+
+        # Or create a dictionary for better readability
+        metrics_dict = dict(zip(model.metrics_names, metrics_values))
+        print("Loss:", metrics_dict['loss'])  # MSE loss
+        print("MAE:", metrics_dict['mae'])  # Mean Absolute Error
+        print("MSE:", metrics_dict['mse'])  # Mean Squared Error
 
     window_size = model.input['snc_1'].shape[-1]
-    # max_weight = 2
-    # smpl_rate = 9
-    # fixed_sigma = 0.001
-    #
-    # y_pred = tf.convert_to_tensor([[1, 0.3], [0.4, 1]])
-    # y_true = tf.convert_to_tensor([0.5, 1])
-    # # loss = GaussianCrossEntropyLoss(smpl_rate=smpl_rate, max_weight=max_weight, fixed_sigma=0.001)(y_true, y_pred)
-    #
-    # # Ensure inputs are float32
-    # y_true = tf.cast(y_true, tf.float32)
-    # y_pred = tf.cast(y_pred, tf.float32)
-    #
-    # # Extract predicted mu and sigma
-    # pred_mu = y_pred[:, 0]
-    # pred_sigma = y_pred[:, 1]
-    #
-    # # tf.print('y_true.shape',y_true.shape)
-    # # tf.print('y_pred.shape', y_pred.shape)
-    #
-    # # Create true and predicted distributions
-    # true_distribution = create_distribution(y_true, tf.ones_like(y_true) * fixed_sigma, smpl_rate=smpl_rate)
-    # true_distribution = tf.nn.softmax(true_distribution, axis=-1)
-    # # true_distribution = tf.one_hot(tf.cast(y_true, tf.int32), self.smpl_rate)
-    # pred_distribution = create_distribution(pred_mu, pred_sigma,  smpl_rate=smpl_rate)
-    #
-    # cross_entropy = keras.losses.CategoricalCrossentropy()(true_distribution, pred_distribution)
+
+
+
     ttt = 1
 
     find_max_sigma(p=0.5, max_weight=2)

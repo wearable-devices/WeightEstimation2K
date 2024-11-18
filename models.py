@@ -5,6 +5,7 @@ import keras.ops as K
 import keras
 from custom.losses import *
 from utils.special_functions import  find_max_sigma
+from custom.metrics import SigmaMetric
 
 def get_optimizer(optimizer = 'LAMB',learning_rate=0.001, weight_decay=0.0):
     # https://stackoverflow.com/questions/67286051/how-can-i-tune-the-optimization-function-with-keras-tuner
@@ -244,25 +245,27 @@ def create_attention_weight_estimation_model(window_size_snc=306, apply_tfp=Fals
 
     return model
 
-class MuMAE(keras.metrics.Metric):
-    def __init__(self, name='mu_mae', **kwargs):
-        super().__init__(name=name, **kwargs)
-        self.mae = self.add_weight(name='mae', initializer='zeros')
-        self.count = self.add_weight(name='count', initializer='zeros')
-
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        mu = y_pred[:, 0]  # Get mu from combined output
-        error = K.abs(y_true - mu)
-        self.mae.assign_add(K.mean(error))
-        self.count.assign_add(1)
-
-    def result(self):
-        return self.mae / self.count
+# class MuMAE(keras.metrics.Metric):
+#     def __init__(self, name='mu_mae', **kwargs):
+#         super().__init__(name=name, **kwargs)
+#         self.mae = self.add_weight(name='mae', initializer='zeros')
+#         self.count = self.add_weight(name='count', initializer='zeros')
+#
+#     def update_state(self, y_true, y_pred, sample_weight=None):
+#         mu = y_pred[:, 0]  # Get mu from combined output
+#         error = K.abs(y_true - mu)
+#         self.mae.assign_add(K.mean(error))
+#         self.count.assign_add(1)
+#
+#     def result(self):
+#         return self.mae / self.count
 
 def create_attention_weight_distr_estimation_model(window_size_snc=306,
                                              J_snc=5, Q_snc=(2, 1),
                                              undersampling=4.8,
                                              scattering_max_order=1,
+
+                                             scattering_type='old',
                                              units=10, dense_activation='tanh', use_attention=True,
                                              attention_layers_for_one_sensor=1,
                                              use_time_ordering=False,
@@ -281,21 +284,26 @@ def create_attention_weight_distr_estimation_model(window_size_snc=306,
                                              apply_noise=False, stddev=0.1,
                                              optimizer='LAMB', learning_rate=0.0016,
                                              loss_balance = 0.5,
-                                             weight_decay=0.0, max_weight=2, compile=True,
+                                             weight_decay=0.0, max_weight=2,
+                                                   loss_normalize=False,
+                                                   compile=True,
                                              ):
-    '''sensor_fusion could be 'early, attention or mean'''
+    '''sensor_fusion could be 'early, attention or mean
+
+    scattering_type coukd be 'old' or 'SEMG' '''
     # Define inputs to the model
     input_layer_snc1 = keras.Input(shape=(window_size_snc,), name='snc_1')
     # input_layer_snc1 = tf.keras.Input(shape=(rows, cols), name='Snc1')
     input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
     input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
+    if scattering_type == 'old':
+        scattering_layer = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)
+    elif scattering_type == 'SEMG':
+        scattering_layer = SEMGScatteringTransform()
 
-    scattered_snc1, scattered_snc11 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)(
-        input_layer_snc1)
-    scattered_snc2, scattered_snc22 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)(
-        input_layer_snc2)
-    scattered_snc3, scattered_snc33 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)(
-        input_layer_snc3)
+    scattered_snc1, scattered_snc11 = scattering_layer(input_layer_snc1)
+    scattered_snc2, scattered_snc22 = scattering_layer(input_layer_snc2)
+    scattered_snc3, scattered_snc33 = scattering_layer(input_layer_snc3)
 
 
     if scattering_max_order == 2:
@@ -313,13 +321,14 @@ def create_attention_weight_distr_estimation_model(window_size_snc=306,
         S_snc3 = K.concatenate((scaterred_snc_list[2], scattered_snc_list_2[2]), axis=1)
         # S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
     else:
-        S_snc1 = K.squeeze(scattered_snc1, axis=-1)
-        S_snc2 = K.squeeze(scattered_snc2, axis=-1)
-        S_snc3 = K.squeeze(scattered_snc3, axis=-1)
+        if scattering_type == 'old':
+            scattered_snc1 = K.squeeze(scattered_snc1, axis=-1)
+            scattered_snc2 = K.squeeze(scattered_snc2, axis=-1)
+            scattered_snc3 = K.squeeze(scattered_snc3, axis=-1)
 
-    S_snc1 = K.transpose(S_snc1, axes=(0, 2, 1))
-    S_snc2 = K.transpose(S_snc2, axes=(0, 2, 1))
-    S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
+    S_snc1 = K.transpose(scattered_snc1, axes=(0, 2, 1))
+    S_snc2 = K.transpose(scattered_snc2, axes=(0, 2, 1))
+    S_snc3 = K.transpose(scattered_snc3, axes=(0, 2, 1))
 
     # Apply Time attention
     sensor_1 = sensor_attention_processing(S_snc1, units=units, conv_activation=dense_activation,
@@ -418,7 +427,7 @@ def create_attention_weight_distr_estimation_model(window_size_snc=306,
 
         losses = {
             'weight_output': 'mse',  # or you can use None if you don't want to train on it
-            'gaussian_output': GaussianCrossEntropyLoss(smpl_rate=smpl_rate, max_weight=max_weight, fixed_sigma=0.001)#GaussianNLLLoss()
+            'gaussian_output': GaussianCrossEntropyLoss(smpl_rate=smpl_rate, max_weight=max_weight, fixed_sigma=0.001, normalize=loss_normalize)#GaussianNLLLoss()
         }
 
         # If you want to ignore mean_output during training, use loss_weights
@@ -431,7 +440,7 @@ def create_attention_weight_distr_estimation_model(window_size_snc=306,
             loss=losses,
             loss_weights=loss_weights,  # This ensures only gaussian_output affects training
             metrics={
-                'gaussian_output': [],
+                'gaussian_output': [SigmaMetric()],
                 'weight_output': [
                     keras.metrics.MeanAbsoluteError(name='mae'),
                     keras.metrics.MeanSquaredError(name='mse')
@@ -443,3 +452,292 @@ def create_attention_weight_distr_estimation_model(window_size_snc=306,
     return model
 
 
+def create_early_fusion_weight_estimation_model(window_size_snc=306, apply_tfp=False,
+                                             J_snc=5, Q_snc=(2, 1),
+                                             undersampling=4.8,
+                                             scattering_max_order=1,
+                                             units=10, dense_activation='tanh',
+                                             final_activation='sigmoid',
+                                             optimizer='LAMB', learning_rate=0.0016,
+                                             weight_decay=0.0, max_weight=0.3, compile=True,
+                                             use_weighted_loss=True, normalization_factor=3,
+                                             weight_loss_multipliers_dict={weight: 1 for weight in [0, 1, 2, 4, 6, 8]}
+                                             ):
+    '''sensor_fusion could be 'early, attention or mean'''
+    # Define inputs to the model
+    input_layer_snc1 = keras.Input(shape=(window_size_snc,), name='snc_1')
+    # input_layer_snc1 = tf.keras.Input(shape=(rows, cols), name='Snc1')
+    input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
+    input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
+
+    scattered_snc1, scattered_snc11 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)(
+        input_layer_snc1)
+    scattered_snc2, scattered_snc22 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)(
+        input_layer_snc2)
+    scattered_snc3, scattered_snc33 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)(
+        input_layer_snc3)
+
+
+    if scattering_max_order == 2:
+        scaterred_snc_list = [K.squeeze(scattered_snc1, axis=-1),
+                              K.squeeze(scattered_snc2, axis=-1),
+                              K.squeeze(scattered_snc3, axis=-1)]
+        scattered_snc_list_2 = [K.squeeze(scattered_snc11, axis=-1),
+                                K.squeeze(scattered_snc22, axis=-1),
+                                K.squeeze(scattered_snc33, axis=-1)]
+
+        S_snc1 = K.concatenate((scaterred_snc_list[0], scattered_snc_list_2[0]), axis=1)
+        # S_snc1 = K.transpose(S_snc1, axes=(0, 2, 1))
+        S_snc2 = K.concatenate((scaterred_snc_list[1], scattered_snc_list_2[1]), axis=1)
+        # S_snc2 = K.transpose(S_snc2, axes=(0, 2, 1))
+        S_snc3 = K.concatenate((scaterred_snc_list[2], scattered_snc_list_2[2]), axis=1)
+        # S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
+    else:
+        S_snc1 = K.squeeze(scattered_snc1, axis=-1)
+        S_snc2 = K.squeeze(scattered_snc2, axis=-1)
+        S_snc3 = K.squeeze(scattered_snc3, axis=-1)
+
+    S_snc1 = K.transpose(S_snc1, axes=(0, 2, 1))
+    S_snc2 = K.transpose(S_snc2, axes=(0, 2, 1))
+    S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
+
+    #eraly fusion
+    fused = K.concatenate([S_snc1,S_snc2,S_snc3], axis=2)
+
+    # Apply Time attention
+    mean =  K.mean(fused, axis=1)
+    x = keras.layers.Dense(units, activation=dense_activation)(mean)
+    x = keras.layers.Dense(units, activation=dense_activation)(x)
+
+
+    final_dense_layer = keras.layers.Dense(1, activation=final_activation, name='final_dense')
+
+
+    out = max_weight * final_dense_layer(mean)
+
+    inputs = {'snc_1': input_layer_snc1, 'snc_2': input_layer_snc2, 'snc_3': input_layer_snc3}
+    model = keras.Model(inputs=inputs,
+                           outputs=out
+                           )
+    if compile:
+        opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
+
+
+        model.compile(loss=keras.losses.MeanSquaredError(),
+                      metrics=
+                          ['mae', 'mse'],  #
+                      optimizer=opt)
+        # else:
+        #     loss_fn = FlexibleCrossEntropy(max_weight, 80)
+        #     model.compile(optimizer=opt, loss=[None, loss_fn, loss_fn, loss_fn], metrics=['accuracy'])
+
+    return model
+
+def mean_time_sensor_image(sensor_1_image):
+
+    x_mean = K.mean(sensor_1_image, axis=1)
+
+
+
+    return x_mean
+
+def create_average_sensors_weight_estimation_model(window_size_snc=306,
+                                             J_snc=5, Q_snc=(2, 1),
+                                             undersampling=4.8,
+                                             scattering_max_order=1,
+                                             units=10, dense_activation='tanh', use_attention=True,
+                                             attention_layers_for_one_sensor=1,
+                                             use_time_ordering=False,
+                                             # use_sensor_attention=False,
+                                            scattering_type='old',
+
+                                             final_activation='sigmoid',
+
+                                             # apply_noise=True, stddev=0.1,
+                                             optimizer='LAMB', learning_rate=0.0016,
+                                             weight_decay=0.0, max_weight=0.3, compile=True,
+                                             ):
+    '''sensor_fusion could be 'early, attention or mean'''
+    # Define inputs to the model
+    input_layer_snc1 = keras.Input(shape=(window_size_snc,), name='snc_1')
+    # input_layer_snc1 = tf.keras.Input(shape=(rows, cols), name='Snc1')
+    input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
+    input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
+
+    if scattering_type == 'old':
+        scattering_layer = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)
+    elif scattering_type == 'SEMG':
+        scattering_layer = SEMGScatteringTransform()
+
+    scattered_snc1, scattered_snc11 = scattering_layer(input_layer_snc1)
+    scattered_snc2, scattered_snc22 = scattering_layer(input_layer_snc2)
+    scattered_snc3, scattered_snc33 = scattering_layer(input_layer_snc3)
+
+    if scattering_max_order == 2:
+        scaterred_snc_list = [K.squeeze(scattered_snc1, axis=-1),
+                              K.squeeze(scattered_snc2, axis=-1),
+                              K.squeeze(scattered_snc3, axis=-1)]
+        scattered_snc_list_2 = [K.squeeze(scattered_snc11, axis=-1),
+                                K.squeeze(scattered_snc22, axis=-1),
+                                K.squeeze(scattered_snc33, axis=-1)]
+
+        S_snc1 = K.concatenate((scaterred_snc_list[0], scattered_snc_list_2[0]), axis=1)
+        # S_snc1 = K.transpose(S_snc1, axes=(0, 2, 1))
+        S_snc2 = K.concatenate((scaterred_snc_list[1], scattered_snc_list_2[1]), axis=1)
+        # S_snc2 = K.transpose(S_snc2, axes=(0, 2, 1))
+        S_snc3 = K.concatenate((scaterred_snc_list[2], scattered_snc_list_2[2]), axis=1)
+        # S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
+    else:
+        if scattering_type == 'old':
+            scattered_snc1 = K.squeeze(scattered_snc1, axis=-1)
+            scattered_snc2 = K.squeeze(scattered_snc2, axis=-1)
+            scattered_snc3 = K.squeeze(scattered_snc3, axis=-1)
+
+    S_snc1 = K.transpose(scattered_snc1, axes=(0, 2, 1))
+    S_snc2 = K.transpose(scattered_snc2, axes=(0, 2, 1))
+    S_snc3 = K.transpose(scattered_snc3, axes=(0, 2, 1))
+
+    # Apply Time attention
+
+    x1 = mean_time_sensor_image(S_snc1)
+    x2 = mean_time_sensor_image(S_snc2)
+    x3 = mean_time_sensor_image(S_snc3)
+
+    x1 = keras.layers.Dense(units, activation=dense_activation, name='dense_1')(x1)
+    x2 = keras.layers.Dense(units, activation=dense_activation, name='dense_2')(x2)
+    x3 = keras.layers.Dense(units, activation=dense_activation, name='dense_3')(x3)
+    # final_dense_layer = keras.layers.Dense(1, activation=final_activation, name='final_dense')
+    out_1 = max_weight * keras.layers.Dense(1, activation=final_activation, name='final_dense_1')(x1)
+    out_2 = max_weight *  keras.layers.Dense(1, activation=final_activation, name='final_dense_2')(x2)
+    out_3 = max_weight *  keras.layers.Dense(1, activation=final_activation, name='final_dense_3')(x3)
+
+    # out = AverageTwoClosest()([ K.squeeze(out_1, axis=-1) ,K.squeeze(out_2, axis=-1), K.squeeze(out_3, axis=-1)])
+    out = 1/3*(K.squeeze(out_1, axis=-1)+ K.squeeze(out_2, axis=-1)+K.squeeze(out_3, axis=-1))
+
+    # Add dimension back to make shapes consistent
+    # out = K.expand_dims(out, axis=-1)
+
+    out_1 = K.squeeze(out_1, axis=-1)
+    out_2 = K.squeeze(out_2, axis=-1)
+    out_3 = K.squeeze(out_3, axis=-1)
+
+    inputs = {'snc_1': input_layer_snc1, 'snc_2': input_layer_snc2, 'snc_3': input_layer_snc3}
+    model = keras.Model(inputs=inputs,
+                           outputs=[out, out_1, out_2, out_3]
+                           )
+    if compile:
+        opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
+
+
+        model.compile(loss=[None, 'mse',
+                            'mse',
+                            'mse'],
+            # loss=[None, keras.losses.MeanSquaredError(),
+            #                 keras.losses.MeanSquaredError(),
+            #                 keras.losses.MeanSquaredError()],
+                      metrics=[
+                          ['mae', 'mse'],  # metrics for first output
+                          'mse',  # no metrics for second output
+                          None,  # no metrics for third output
+                          None  # no metrics for fourth output
+                      ],
+                      optimizer=opt)
+        # else:
+        #     loss_fn = FlexibleCrossEntropy(max_weight, 80)
+        #     model.compile(optimizer=opt, loss=[None, loss_fn, loss_fn, loss_fn], metrics=['accuracy'])
+
+    return model
+
+def create_one_sensors_weight_estimation_model(sensor_num=2, window_size_snc=306,
+                                             J_snc=5, Q_snc=(2, 1),
+                                             undersampling=4.8,
+                                             scattering_max_order=1,
+                                             units=10, dense_activation='relu', use_attention=True,
+                                             attention_layers_for_one_sensor=1,
+                                             use_time_ordering=False,
+                                             # use_sensor_attention=False,
+                                            scattering_type='old',
+
+                                             final_activation='sigmoid',
+
+                                             # apply_noise=True, stddev=0.1,
+                                             optimizer='Adam', learning_rate=0.0016,
+                                             weight_decay=0.0, max_weight=3.0, compile=True,
+                                             ):
+    '''sensor_fusion could be 'early, attention or mean'''
+    # Define inputs to the model
+    input_layer_snc1 = keras.Input(shape=(window_size_snc,), name='snc_1')
+    # input_layer_snc1 = tf.keras.Input(shape=(rows, cols), name='Snc1')
+    input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
+    input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
+
+    if scattering_type == 'old':
+        scattering_layer = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)
+    elif scattering_type == 'SEMG':
+        scattering_layer = SEMGScatteringTransform()
+
+    scattered_snc1, scattered_snc11 = scattering_layer(input_layer_snc1)
+    scattered_snc2, scattered_snc22 = scattering_layer(input_layer_snc2)
+    scattered_snc3, scattered_snc33 = scattering_layer(input_layer_snc3)
+
+    if scattering_max_order == 2:
+        scaterred_snc_list = [K.squeeze(scattered_snc1, axis=-1),
+                              K.squeeze(scattered_snc2, axis=-1),
+                              K.squeeze(scattered_snc3, axis=-1)]
+        scattered_snc_list_2 = [K.squeeze(scattered_snc11, axis=-1),
+                                K.squeeze(scattered_snc22, axis=-1),
+                                K.squeeze(scattered_snc33, axis=-1)]
+
+        S_snc1 = K.concatenate((scaterred_snc_list[0], scattered_snc_list_2[0]), axis=1)
+        # S_snc1 = K.transpose(S_snc1, axes=(0, 2, 1))
+        S_snc2 = K.concatenate((scaterred_snc_list[1], scattered_snc_list_2[1]), axis=1)
+        # S_snc2 = K.transpose(S_snc2, axes=(0, 2, 1))
+        S_snc3 = K.concatenate((scaterred_snc_list[2], scattered_snc_list_2[2]), axis=1)
+        # S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
+    else:
+        if scattering_type == 'old':
+            scattered_snc1 = K.squeeze(scattered_snc1, axis=-1)
+            scattered_snc2 = K.squeeze(scattered_snc2, axis=-1)
+            scattered_snc3 = K.squeeze(scattered_snc3, axis=-1)
+
+    S_snc1 = K.transpose(scattered_snc1, axes=(0, 2, 1))
+    S_snc2 = K.transpose(scattered_snc2, axes=(0, 2, 1))
+    S_snc3 = K.transpose(scattered_snc3, axes=(0, 2, 1))
+
+    all_sensors = [S_snc1,S_snc2,S_snc3]
+    x = all_sensors[sensor_num-1]
+
+    # Apply Time attention
+
+    x = mean_time_sensor_image(x)
+    # x_mean = K.mean(x, axis=1)
+    # x_min = K.min(x, axis=1)
+    # x_max = K.max(x, axis=1)
+    # x = K.concatenate([K.expand_dims(x_min, axis=2), K.expand_dims(x_mean, axis=2),
+    #                            K.expand_dims(x_max, axis=2)], axis=2)
+    x = keras.layers.Dense(units, activation=dense_activation)(x)
+    # x = keras.layers.Flatten()(x)
+
+
+    x = keras.layers.Dense(units, activation=dense_activation, name='dense_1')(x)
+
+    out = (max_weight) * keras.layers.Dense(1, activation=final_activation, name='final_dense_1')(x)
+
+
+    inputs = {'snc_1': input_layer_snc1, 'snc_2': input_layer_snc2, 'snc_3': input_layer_snc3}
+    model = keras.Model(inputs=inputs,
+                           outputs=out
+                           )
+    if compile:
+        opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
+
+
+        model.compile(loss= 'mse',
+
+                      metrics=
+                          ['mae', 'mse'],
+                      optimizer=opt,
+                      run_eagerly=True)
+
+
+    return model

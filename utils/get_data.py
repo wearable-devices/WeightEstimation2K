@@ -2,7 +2,7 @@ import tensorflow as tf
 import pandas as pd
 import re
 import os
-from custom.layers import ScatteringTimeDomain
+from custom.layers import ScatteringTimeDomain, SEMGScatteringTransform
 import tensorflow.keras as tf_keras
 import tensorflow_probability as tfp
 
@@ -133,8 +133,10 @@ def get_weight_file_from_dir(file_dir):
 
 
 def mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_person=5,
-                        J_snc=6, Q_snc=(2,1), undersampling=5, contacts=['L', 'M', 'R']):
-    '''takes persons_dict, takes samples_per_weight_per_person=5 windows for each snc sensor, applyes scattering and returns obtained dictionary'''
+                        J_snc=6, Q_snc=(2,1), undersampling=5, contacts=['L', 'M', 'R'], scattering_type='old'):
+    '''takes persons_dict, takes samples_per_weight_per_person=5 windows for each snc sensor, applyes scattering and returns obtained dictionary
+    scattering_type could be 'old' or 'SEMG'
+    '''
     persons_names = [person_key + contact for person_key in persons_dict for contact in contacts]
     output_dict = {person: {} for person in persons_names}
     for person, weight_dict in persons_dict.items():
@@ -168,21 +170,25 @@ def mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_pe
                         # labels.append(label)
 
                     persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
-                    scattered_snc1, scattered_snc11 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling,
-                                                                           max_order=2)(persons_input_data[0])
-                    scattered_snc2, scattered_snc22 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling,
-                                                                           max_order=2)(persons_input_data[1])
-                    scattered_snc3, scattered_snc33 = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling,
-                                                                           max_order=2)(persons_input_data[2])
+                    if scattering_type=='old':
+                        scattering_layer = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling,
+                                                                max_order=2)
+                    elif scattering_type == 'SEMG':
+                        scattering_layer = SEMGScatteringTransform()
 
-                    scattered_snc1 = tf.squeeze(scattered_snc1, axis=-1)
-                    scattered_snc11 = tf.squeeze(scattered_snc11, axis=-1)
+                    scattered_snc1, scattered_snc11 = scattering_layer(persons_input_data[0])
+                    scattered_snc2, scattered_snc22 = scattering_layer(persons_input_data[1])
+                    scattered_snc3, scattered_snc33 = scattering_layer(persons_input_data[2])
 
-                    scattered_snc2 = tf.squeeze(scattered_snc2, axis=-1)
-                    scattered_snc22 = tf.squeeze(scattered_snc22, axis=-1)
+                    if scattering_type == 'old':
+                        scattered_snc1 = tf.squeeze(scattered_snc1, axis=-1)
+                        scattered_snc11 = tf.squeeze(scattered_snc11, axis=-1)
 
-                    scattered_snc3 = tf.squeeze(scattered_snc3, axis=-1)
-                    scattered_snc33 = tf.squeeze(scattered_snc33, axis=-1)
+                        scattered_snc2 = tf.squeeze(scattered_snc2, axis=-1)
+                        scattered_snc22 = tf.squeeze(scattered_snc22, axis=-1)
+
+                        scattered_snc3 = tf.squeeze(scattered_snc3, axis=-1)
+                        scattered_snc33 = tf.squeeze(scattered_snc33, axis=-1)
 
                     # scattered_snc1_mean = tf.reduce_mean(scattered_snc1, axis=-1)
                     # scattered_snc2_mean = tf.reduce_mean(scattered_snc2, axis=-1)

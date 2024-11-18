@@ -7,6 +7,7 @@ from numpy.core.records import record
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import keract
+from tensorflow import float32
 from tensorflow.keras.callbacks import ModelCheckpoint
 import plotly.io as pio
 from tensorflow.python.ops.losses.losses_impl import mean_squared_error
@@ -26,25 +27,27 @@ import keras.ops as K
 from utils.maps import filter_dict_by_keys
 
 class SaveKerasModelCallback(keras.callbacks.Callback):
-    def __init__(self, save_path, model_name):
+    def __init__(self, save_path, model_name, phase='train'):
         super(SaveKerasModelCallback, self).__init__()
         self.save_path = save_path
         self.model_name = model_name
+        self.phase= phase
         os.makedirs(save_path, exist_ok=True)
 
     def on_epoch_end(self, epoch, logs=None):
-        self.model.save(os.path.join(self.save_path, self.model_name + str(epoch) + '.keras'), save_format='keras')
-        print(f'Model saved to {self.save_path}')
+        if self.phase=='test':
+            self.model.save(os.path.join(self.save_path, self.model_name + str(epoch) + '.keras'), save_format='keras')
+            print(f'Model saved to {self.save_path}')
 
-    # def on_train_end(self, logs=None):
-    #     self.model.save(os.path.join(self.save_path, self.model_name + '.keras'), save_format='keras')
-    #     print(f'Model saved to {self.save_path}')
+    def on_train_end(self, logs=None):
+        self.model.save(os.path.join(self.save_path, self.model_name + '.keras'), save_format='keras')
+        print(f'Model saved to {self.save_path}')
 
 
 class FeatureSpacePlotCallback(keras.callbacks.Callback):
     def __init__(self, persons_dict, trial_dir, layer_name, used_persons='all', proj='pca', metric="euclidean",
                  num_of_components='3', considered_weights=[0, 0.5, 1,2], data_mode='all',
-                 samples_per_label_per_person=10, picture_name='name', phase='train'):
+                 samples_per_label_per_person=10, picture_name_prefix='name', phase='train'):
         super(FeatureSpacePlotCallback, self).__init__()
 
         if used_persons == 'all':
@@ -58,12 +61,21 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
         self.phase = phase
         self.data_mode = data_mode
         self.num_of_components = num_of_components
-        self.picture_name = picture_name
+        self.picture_name_prefix = picture_name_prefix
+        self.picture_name = picture_name_prefix
         # self.persons_dict_labeled = persons_dict_labeled
         self.considered_weights = considered_weights
         # if persons_dict_labeled is None:
         #     self.persons_dict_labeled = self.persons_dict
         self.samples_per_label_per_person = samples_per_label_per_person
+        self.current_epoch = 0
+
+    def on_epoch_begin(self, epoch, logs=None):
+            self.current_epoch = epoch
+
+    def on_epoch_end(self, epoch, logs=None):
+        # Use epoch number here to create the picture name
+        self.picture_name = f"{self.picture_name_prefix}{epoch}"
 
     def on_train_end(self, logs=None):
         # try:
@@ -75,8 +87,8 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
         #     print('layer: ', self.layer_name)
         #     print(' picture name: ', self.picture_name)
 
-    def on_test_end(self, logs=None):
-        if self.phase == 'test':
+    def on_test_end(self,epoch, logs=None):
+        if self.phase == 'test' and  self.current_epoch % 5  == 0:
             self.calc_feature_space()
             self.plot_feature_space_optuna()
 
@@ -259,7 +271,7 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
 
 class OutputPlotCallback(keras.callbacks.Callback):
     def __init__(self, persons_dict, trial_dir, #persons_dict_labeled=None,
-                 samples_per_label_per_person=10,used_persons='all',data_mode='all', picture_name='name', phase='train'):
+                 samples_per_label_per_person=10, output_num=0, used_persons='all',data_mode='all', picture_name='name', phase='train'):
         super(OutputPlotCallback, self).__init__()
         '''used_persons - list of persons to work with'''
 
@@ -271,6 +283,7 @@ class OutputPlotCallback(keras.callbacks.Callback):
         self.phase = phase
         self.data_mode = data_mode
         self.picture_name = picture_name
+        self.output_num = output_num
         self.samples_per_label_per_person = samples_per_label_per_person
 
         self.output_dict = {person: {} for person in
@@ -343,15 +356,24 @@ class OutputPlotCallback(keras.callbacks.Callback):
                         snc2_batch.append(file_data['snc_2'][start:start + window_size])
                         snc3_batch.append(file_data['snc_3'][start:start + window_size])
                     # if len(self.model.inputs == 3): # model doesn't have labeled input
-                    persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
+                    if isinstance(self.model.input, dict):
+                        persons_input_data = {'snc_1': tf.cast(tf.stack(snc1_batch), dtype=float32),
+                                              'snc_2': tf.cast(tf.stack(snc2_batch), dtype=float32),
+                                              'snc_3': tf.cast(tf.stack(snc3_batch), dtype=float32)}
+                    else:
+                        persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
                     if len(self.model.inputs) == 7:
                         persons_input_data = [tf.expand_dims(snc_data, axis=1) for snc_data in persons_input_data]
                         persons_labeled_input_dict = labeled_input_dict[person]
                         persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
                                                       for tensor in persons_labeled_input_dict.values()]
                         persons_input_data = persons_input_data + persons_labeled_input_data
+
+
                     try:
-                        predictions = self.model([persons_input_data])[0]
+                        predictions = self.model.predict(persons_input_data)
+                        if isinstance(predictions, list):
+                            predictions = predictions[self.output_num]
                     except:
                         predictions = self.model([persons_input_data])['weight_output']
                         # predictions = self.model([persons_input_data])['gaussian_output']
@@ -399,7 +421,8 @@ class OutputPlotCallback(keras.callbacks.Callback):
                     name=f"{person} - {label}"
                 ))
 
-                mean_values[label] = tf.reduce_mean(tensor[:, 0]).numpy()
+                # mean_values[label] = tf.reduce_mean(tensor[:, 0]).numpy()
+                mean_values[label] = tf.reduce_mean(tensor).numpy()
 
             # Add line connecting mean points
             sorted_labels = sorted(mean_values.keys())
@@ -608,91 +631,115 @@ def get_labeled_list(persons_dict, samples_per_weight=10, window_size=306):
     return labeled_input_dict
 
 
-class FlattenFeatureSpacePlotCallback(keras.callbacks.Callback):
-    def __init__(self, persons_dict, trial_dir, layer_name, persons_dict_labeled=None,
-                 considered_weights=[0, 1, 2, 4, 6, 8],
-                 samples_per_label_per_person=10, picture_name='name', phase='train'):
-        super(FlattenFeatureSpacePlotCallback, self).__init__()
+class Output_2d_PlotCallback(keras.callbacks.Callback):
+    def __init__(self, persons_dict, trial_dir, #persons_dict_labeled=None,
+                 samples_per_label_per_person=10,used_persons='all',data_mode='all', picture_name='name', phase='train'):
+        super(Output_2d_PlotCallback, self).__init__()
+        '''used_persons - list of persons to work with'''
 
-        self.persons_dict = persons_dict
+        if used_persons == 'all':
+            self.persons_dict = persons_dict
+        else:
+            self.persons_dict = filter_dict_by_keys(persons_dict, used_persons)
         self.trial_dir = trial_dir
-        self.layer_name = layer_name
         self.phase = phase
+        self.data_mode = data_mode
         self.picture_name = picture_name
-        self.persons_dict_labeled = persons_dict_labeled
-        self.considered_weights = considered_weights
-        if persons_dict_labeled is None:
-            self.persons_dict_labeled = self.persons_dict
         self.samples_per_label_per_person = samples_per_label_per_person
 
+        self.output_dict = {person: {} for person in
+                            self.persons_dict.keys()}  # {person: {weight: [] for weight in persons_dict[person]} for person in persons_dict.keys()}
+        # self.personal_accuracy = {}
+
+        '''if model supposed to have labeled input it will be taken from self.persons_dict_labeled'''
+
     def on_train_end(self, logs=None):
-        self.calc_feature_space()
-        self.plot_feature_space_optuna()
+        try:
+            self.calc_feature_space()
+        except:
+            print('Could not calc  output Callback')
+        try:
+            self.plot_feature_space_optuna()
+            # print(self.personal_accuracy)
+        except:
+            print('Could not  plot output Callback')
 
     def on_test_end(self, logs=None):
         if self.phase == 'test':
-            try:
-                self.calc_feature_space()
-                self.plot_feature_space_optuna()
-            except:
-                print(f'No success in FlattenFeatureSpacePlotCallback with layer {self.layer_name}')
+            self.calc_feature_space()
+            self.plot_feature_space_optuna()
+
+    # def get_second_stage_accuracy(self):
+    #     # Check if self.output_dict[first key in the dict] is empty
+    #     # personal_accuracy = {}
+    #     first_person = next(iter(self.output_dict))
+    #     if not self.output_dict[first_person]:
+    #         print(f"Output dict for {first_person} is empty. Calculating feature space...")
+    #         self.calc_feature_space()
+    #     else:
+    #         print(f"Output dict for {first_person}m is not empty. Proceeding with existing data.")
+    #     for person, weight_dict in self.output_dict.items():
+    #         personal_errors = {weight: (tf.reduce_mean(self.output_dict[person][weight][0]) - weight).numpy() for weight
+    #                            in weight_dict.keys()}
+    #         mean_squared_error = np.sqrt(np.mean([error ** 2 for error in personal_errors.values()]))
+    #         personal_errors['mean_squared_error'] = mean_squared_error
+    #         self.personal_accuracy[person] = personal_errors
 
     def calc_feature_space(self):
-        """ Calculate and project the feature space from model layer outputs for each person and label.  """
-
-        window_size = self.model.get_layer('Snc1').input.shape[-1]
+        """this method  """
+        window_size = self.model.input['snc_1'].shape[-1]
 
         if len(self.model.inputs) == 7:  # model has a labeled input
             samples_per_weight = int(self.model.inputs[3].shape[
                                          1] / 6)  # 6 = number of different weights whitch supposed to be the same for all persons
             labeled_input_dict = get_labeled_tensors(self.persons_dict_labeled, samples_per_weight=samples_per_weight,
                                                      window_size=window_size)
-
-        layer_output_dict = {person: {} for person in
-                             self.persons_dict.keys()}
         for person, weight_dict in self.persons_dict.items():
-            weight_dict_part = {weight: weight_dict[weight] for weight in self.considered_weights if
-                                weight in weight_dict}
-            # label = weight
-            for label, records in weight_dict_part.items():
-                snc1_batch = []
-                snc2_batch = []
-                snc3_batch = []
-                for _ in range(self.samples_per_label_per_person):
-                    # Randomly select a file for this label
-                    file_idx = tf.random.uniform([], 0, len(records), dtype=tf.int32)
-                    file_data = records[file_idx.numpy()]
-                    # Generate a random starting point within the file
-                    start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
-                                              dtype=tf.int32)
-                    # Extract the window
-                    snc1_batch.append(file_data['snc_1'][start:start + window_size])
-                    snc2_batch.append(file_data['snc_2'][start:start + window_size])
-                    snc3_batch.append(file_data['snc_3'][start:start + window_size])
-                    # labels.append(label)
 
-                persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
-                if len(self.model.inputs) == 7:
-                    persons_input_data = [tf.expand_dims(snc_data, axis=1) for snc_data in persons_input_data]
-                    persons_labeled_input_dict = labeled_input_dict[person]
-                    persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
-                                                  for tensor in persons_labeled_input_dict.values()]
-                    persons_input_data = persons_input_data + persons_labeled_input_data
-
-                layer_predictions =  get_layer_output(self.model, persons_input_data, self.layer_name)
-
-                layer_predictions = keras.layers.Flatten()(layer_predictions)
-                layer_output_dict[person][label] = layer_predictions
-        # Extract features from an intermediate layer and project them
-        self.layer_output_dict = layer_output_dict
-        print(f'Feature space for layer {self.layer_name} is calculated')
-        # except:
-        #     print('Problem with layer', self.layer_name)
+            for weight, records in weight_dict.items():
+                if self.data_mode == 'all':
+                    used_records = records
+                else:
+                    used_records = [record for record in records if record['phase'] == self.data_mode]
+                if len(used_records)>0:
+                    snc1_batch = []
+                    snc2_batch = []
+                    snc3_batch = []
+                    for _ in range(self.samples_per_label_per_person):
+                        # Randomly select a file for this label
+                        file_idx = tf.random.uniform([], 0, len(used_records), dtype=tf.int32)
+                        file_data = used_records[file_idx.numpy()]
+                        # Generate a random starting point within the file
+                        start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
+                                                  dtype=tf.int32)
+                        # Extract the window
+                        snc1_batch.append(file_data['snc_1'][start:start + window_size])
+                        snc2_batch.append(file_data['snc_2'][start:start + window_size])
+                        snc3_batch.append(file_data['snc_3'][start:start + window_size])
+                    # if len(self.model.inputs == 3): # model doesn't have labeled input
+                    persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
+                    if len(self.model.inputs) == 7:
+                        persons_input_data = [tf.expand_dims(snc_data, axis=1) for snc_data in persons_input_data]
+                        persons_labeled_input_dict = labeled_input_dict[person]
+                        persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
+                                                      for tensor in persons_labeled_input_dict.values()]
+                        persons_input_data = persons_input_data + persons_labeled_input_data
+                    try:
+                        predictions = self.model([persons_input_data])[0]
+                    except:
+                        predictions = self.model([persons_input_data])['gaussian_output']
+                    # predictions = tf.squeeze(tf.keras.layers.Flatten()(predictions), axis=-1)
+                    self.output_dict[person][weight] = predictions
+                # tf.print('weight', weight)
+                #
+                # tf.print('predictions', predictions.shape, predictions)
+                # tf.print('output_dict', self.output_dict)
 
     def plot_feature_space_optuna(self):
         # Color map for labels
         color_map = {
             0: 'red',
+            0.5: 'pink',
             1: 'blue',
             2: 'green',
             4: 'yellow',
@@ -702,31 +749,74 @@ class FlattenFeatureSpacePlotCallback(keras.callbacks.Callback):
         }
 
         # Marker map for persons
-        markers = ['square', 'square-open', 'circle', 'square', 'diamond', 'cross', 'x', 'diamond-open']
+        markers = ['circle', 'square', 'diamond', 'cross', 'x', 'square-open', 'diamond-open']
         marker_map = {person: markers[i % len(markers)] for i, person in enumerate(self.persons_dict.keys())}
 
         # Create the plot
-        # fig = go.Figure()
-        plt.figure(figsize=(10, 6))
+        fig = go.Figure()
 
-        user_num = 0
-        for person, labels in self.layer_output_dict.items():
-            user_num += 1
+        for person, labels in self.output_dict.items():
+            # Dictionary to store mean values for each label
+            mean_values = {}
             for label, tensor in labels.items():
-                plt.plot(self.layer_output_dict[person][label][0], label=f'{person}_{label}', alpha=0.6)
-            plt.title(self.layer_name)
-            plt.legend()
-            plt.show()
-        # Save the plot as HTML
-        # html_path = os.path.join(self.trial_dir,
-        #                          f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.html")
-        # fig.write_html(html_path, full_html=True)
+                fig.add_trace(go.Scatter(
+                    x=tensor[:, 0],  #  predicted weight
+                    y=tensor[:, 1],  # sigma
+                    mode='markers',
+                    marker=dict(
+                        size=8,
+                        color=color_map[label],
+                        symbol=marker_map[person],
+                        opacity=0.8
+                    ),
+                    name=f"{person} - {label}"
+                ))
 
-        # print(f"Interactive plot saved to: {html_path}")
+                # mean_values[label] = tf.reduce_mean(tensor[:, 0]).numpy()
+
+
+
+        # Update layout
+        fig.update_layout(
+            title=f"Feature Space Visualization for {self.picture_name}",
+            xaxis_title="Weight",
+            yaxis_title="Predicted value",
+            legend_title="Person - Label",
+            xaxis=dict(
+                range=[-0.1, 3],  # Set x-axis limits
+                tickmode='array',
+                tickvals=list(set([label for labels in self.output_dict.values() for label in labels.keys()])),
+                ticktext=[f'{label} kg' for label in
+                          set([label for labels in self.output_dict.values() for label in labels.keys()])]
+            ),
+            yaxis=dict(
+                range=[-0.1, 3]  # Set y-axis limits
+            )
+        )
+
+        # Save the plot as HTML
+        html_path = os.path.join(self.trial_dir,
+                                 f"{self.picture_name}_output.html")
+        fig.write_html(html_path, full_html=True)
+        print(f"Interactive plot saved to: {html_path}")
+
+        # # Optionally, save as PNG as well
+        # png_path = os.path.join(self.trial_dir,
+        #                         f"{self.picture_name}_output.png")
+        # fig.write_image(png_path)
+        # print(f"Static image saved to: {png_path}")
 
     def cleanup(self):
         self.projected_layer_output_dict = None
         keras.backend.clear_session()
+
+class MetricsTrackingCallback(keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        print(f"\nEpoch {epoch} logs:", logs)
+        if not logs:
+            print("WARNING: logs dictionary is empty!")
+        if not hasattr(self.model, 'history') or not self.model.history:
+            print("WARNING: model history is not initialized!")
 
 
 if __name__ == "__main__":

@@ -63,7 +63,7 @@ class GaussianNLLLoss(keras.losses.Loss):
         return config
 
 class GaussianCrossEntropyLoss(keras.losses.Loss):
-    def  __init__(self, smpl_rate=100, max_weight=2.5, fixed_sigma=0.001,reduction=None,  # Add reduction parameter
+    def  __init__(self, smpl_rate=100, max_weight=2.5, fixed_sigma=0.001,reduction=None,  normalize=False,
                  name='gaussian_cross_entropy'):
         """
         Initialize the Gaussian Cross Entropy Loss.
@@ -78,6 +78,7 @@ class GaussianCrossEntropyLoss(keras.losses.Loss):
         self.smpl_rate = smpl_rate
         self.max_weight = max_weight
         self.fixed_sigma = fixed_sigma
+        self.normalize = normalize
 
     def gaussian(self, x, mu, sigma):
         """Compute Gaussian distribution."""
@@ -100,6 +101,8 @@ class GaussianCrossEntropyLoss(keras.losses.Loss):
 
         # Calculate distribution
         distribution = self.gaussian(x_values, mu, sigma)
+        if self.normalize:
+            distribution = tf.nn.softmax(distribution, axis=-1)
 
         # Apply softmax normalization
         return distribution#tf.nn.softmax(distribution, axis=-1)
