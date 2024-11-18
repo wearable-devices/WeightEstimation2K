@@ -70,9 +70,10 @@ def create_person_zeroid_model(sensor_num=2, window_size_snc=306,
 
         model.compile(loss= 'categorical_crossentropy',
                       metrics=['accuracy',
-                               keras.metrics.Precision(name='precision'),
-                               keras.metrics.Recall(name='recall'),
-                               keras.metrics.F1Score(name='f1_score')],
+                               # keras.metrics.Precision(name='precision'),
+                               # keras.metrics.Recall(name='recall'),
+                               # keras.metrics.F1Score(name='f1_score')
+                               ],
                       optimizer=opt,
                       run_eagerly=True)
 
