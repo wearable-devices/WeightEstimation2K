@@ -308,21 +308,21 @@ class OutputPlotCallback(keras.callbacks.Callback):
             self.calc_feature_space()
             self.plot_feature_space_optuna()
 
-    def get_second_stage_accuracy(self):
-        # Check if self.output_dict[first key in the dict] is empty
-        # personal_accuracy = {}
-        first_person = next(iter(self.output_dict))
-        if not self.output_dict[first_person]:
-            print(f"Output dict for {first_person} is empty. Calculating feature space...")
-            self.calc_feature_space()
-        else:
-            print(f"Output dict for {first_person}m is not empty. Proceeding with existing data.")
-        for person, weight_dict in self.output_dict.items():
-            personal_errors = {weight: (tf.reduce_mean(self.output_dict[person][weight][0]) - weight).numpy() for weight
-                               in weight_dict.keys()}
-            mean_squared_error = np.sqrt(np.mean([error ** 2 for error in personal_errors.values()]))
-            personal_errors['mean_squared_error'] = mean_squared_error
-            self.personal_accuracy[person] = personal_errors
+    # def get_second_stage_accuracy(self):
+    #     # Check if self.output_dict[first key in the dict] is empty
+    #     # personal_accuracy = {}
+    #     first_person = next(iter(self.output_dict))
+    #     if not self.output_dict[first_person]:
+    #         print(f"Output dict for {first_person} is empty. Calculating feature space...")
+    #         self.calc_feature_space()
+    #     else:
+    #         print(f"Output dict for {first_person}m is not empty. Proceeding with existing data.")
+    #     for person, weight_dict in self.output_dict.items():
+    #         personal_errors = {weight: (tf.reduce_mean(self.output_dict[person][weight][0]) - weight).numpy() for weight
+    #                            in weight_dict.keys()}
+    #         mean_squared_error = np.sqrt(np.mean([error ** 2 for error in personal_errors.values()]))
+    #         personal_errors['mean_squared_error'] = mean_squared_error
+    #         self.personal_accuracy[person] = personal_errors
 
     def calc_feature_space(self):
         """this method  """

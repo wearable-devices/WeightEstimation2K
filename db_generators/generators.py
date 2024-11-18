@@ -305,5 +305,60 @@ class OneSncGenerator(keras.utils.Sequence):
         return [tf.stack(snc_batch)], tf.convert_to_tensor(labels)
 
 
+def preprocess_person_data(person_zero_dict, window_size_snc=306):
+    """
+    Preprocess the person identification data dictionary into train/test sets
+    with specific window size
 
+    Args:
+        person_zero_dict: Dictionary of {person_name: list_of_data_dicts}
+        window_size_snc: Window size for sensor data (default: 306)
+
+    Returns:
+        train_data: Dict with 'inputs' and 'labels' for training
+        test_data: Dict with 'inputs' and 'labels' for testing
+        person_to_idx: Dict mapping person names to label indices
+    """
+    # Create person to index mapping
+    person_to_idx = {name: idx for idx, name in enumerate(person_zero_dict.keys())}
+
+    train_inputs = {'snc_1': [], 'snc_2': [], 'snc_3': []}
+    train_labels = []
+    test_inputs = {'snc_1': [], 'snc_2': [], 'snc_3': []}
+    test_labels = []
+
+    for person_name, data_list in person_zero_dict.items():
+        person_idx = person_to_idx[person_name]
+
+        for data_dict in data_list:
+            # Process data into windows
+            for key in ['snc_1', 'snc_2', 'snc_3']:
+                data = np.array(data_dict[key], dtype=np.float32)
+
+                # If data is longer than window_size, split it into windows
+                num_windows = len(data) // window_size_snc
+                for i in range(num_windows):
+                    start_idx = i * window_size_snc
+                    window = data[start_idx:start_idx + window_size_snc]
+
+                    if data_dict['phase'] == 'Train':
+                        train_inputs[key].append(window)
+                        if key == 'snc_1':  # Only add label once per window set
+                            train_labels.append(person_idx)
+                    else:
+                        test_inputs[key].append(window)
+                        if key == 'snc_1':  # Only add label once per window set
+                            test_labels.append(person_idx)
+
+    # Convert to numpy arrays
+    train_data = {
+        'inputs': {k: np.stack(v) for k, v in train_inputs.items()},
+        'labels': np.array(train_labels)
+    }
+    test_data = {
+        'inputs': {k: np.stack(v) for k, v in test_inputs.items()},
+        'labels': np.array(test_labels)
+    }
+
+    return train_data, test_data, person_to_idx
 

@@ -48,9 +48,9 @@ def objective(trial):
     keras.backend.clear_session()
 
     # Define the search space and sample parameter values
-    snc_window_size_hp = 512#trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
-    addition_weight_hp = 0.1#trial.suggest_float('addition_weight', 0.0, 0.5, step=0.1)
-    epoch_num =  40
+    snc_window_size_hp = trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
+    addition_weight_hp = trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
+    epoch_num =  30
     epoch_len = 5  # None
     use_pretrained_model = True  # trial.suggest_categorical('use_pretrained_model',[True, False])
 
@@ -135,10 +135,10 @@ def objective(trial):
 
     average_sensors_weight_estimation_model_dict = {'window_size_snc': snc_window_size_hp,
                                                     'J_snc': 7, 'Q_snc': (2, 1),
-                                                    'undersampling':2,# trial.suggest_float('undersampling', 1, 5, step=0.2),#4.8,
+                                                    'undersampling': trial.suggest_float('undersampling', 1, 5, step=0.2),#4.8,
                                                     'scattering_max_order': 1,
-                                                    'units':10,# trial.suggest_int('units', 5, 15),
-                                                    'dense_activation': 'linear',#trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
+                                                    'units': trial.suggest_int('units', 5, 15),
+                                                    'dense_activation': trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
                                                     'use_attention': False,
                                                     'attention_layers_for_one_sensor': 1,
                                                     'use_time_ordering': False,
@@ -286,6 +286,7 @@ def objective(trial):
         personal_metrics_dict[person] = {'mae':person_mae, 'mse': person_mse}
 
     max_val_mae = max([metrics['mae'] for person,metrics in personal_metrics_dict.items()])
+    mean_val_mae = np.mean([metrics['mae'] for person,metrics in personal_metrics_dict.items()])
 
     # Calculate the standard deviation (sigma) of results_for_same_parameters
     # sigma_results = np.std(results_for_same_parameters)
@@ -329,7 +330,7 @@ def objective(trial):
     #               samples_per_label_per_person=10, picture_name=person,
     #                             phase='train')])
 
-    return max_val_mae#max_val_loss#mean_val_mse  # max_val_loss
+    return mean_val_mae #max_val_mae#max_val_loss#mean_val_mse  # max_val_loss
 
 
 def logging_dirs():
@@ -350,10 +351,10 @@ if __name__ == "__main__":
                                        'Alisa','Molham']
     persons_for_test = [ 'Leeor',
                         'Liav',
-                         #'Daniel',
+                         'Daniel',
                          'Foad',
-                        #'Asher2', 'Lee',
-                   # 'Ofek',
+                        'Asher2', 'Lee',
+                   'Ofek',
        'Tom', #'Guy'
                         ]
     persons_for_plot = persons_for_test
