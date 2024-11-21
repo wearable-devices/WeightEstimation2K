@@ -4,7 +4,7 @@ import re
 import os
 from custom.layers import ScatteringTimeDomain, SEMGScatteringTransform
 import tensorflow.keras as tf_keras
-import tensorflow_probability as tfp
+#import tensorflow_probability as tfp
 
 # def process_csv(file_path):
 #     # Read the CSV file
@@ -91,7 +91,8 @@ def get_weight_file_from_dir(file_dir):
        """
     persons_dict = {}
     for dirpath, dirnames, filenames in os.walk(file_dir):
-        phase = dirpath.split('/')[-1]
+        # phase = dirpath.split('/')[-1]
+        phase = dirpath.split('\\')[-1]
         for filename in filenames:
             if re.search(r'weight', filename) and filename.endswith('.csv'):
                 # username_numexp_expname_label_force_orientation_contact

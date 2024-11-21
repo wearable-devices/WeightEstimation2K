@@ -9,6 +9,7 @@ from db_generators.generators import preprocess_person_data
 from keras.callbacks import TensorBoard
 from pathlib import Path
 from datetime import datetime
+from custom.losses import ProtoLoss
 import os
 
 from utils.get_data import get_weight_file_from_dir
@@ -18,6 +19,7 @@ def create_person_zeroid_model(sensor_num=2, window_size_snc=306,
                                              undersampling=4.8,
                                              units=10, dense_activation='relu',
                                             scattering_type='old',
+                                            embd_dim=5,
 
                                             number_of_persons=10,
                                              optimizer='Adam', learning_rate=0.0016,
@@ -57,7 +59,7 @@ def create_person_zeroid_model(sensor_num=2, window_size_snc=306,
     x = K.mean(x, axis=1)
     x = keras.layers.Dense(units, activation=dense_activation, name = 'dense_1')(x)
     x = keras.layers.Dense(units//2, activation=dense_activation, name='person_id')(x)
-    out = keras.layers.Dense(number_of_persons, activation='softmax', name = 'person_distr')(x)
+    out = keras.layers.Dense(embd_dim, activation='softmax', name = 'person_distr')(x)
 
 
 
@@ -68,12 +70,12 @@ def create_person_zeroid_model(sensor_num=2, window_size_snc=306,
     if compile:
         opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
 
-        model.compile(loss= 'categorical_crossentropy',
-                      metrics=['accuracy',
+        model.compile(loss=ProtoLoss(number_of_persons=number_of_persons),  #'categorical_crossentropy',
+                      #metrics=['accuracy',
                                # keras.metrics.Precision(name='precision'),
                                # keras.metrics.Recall(name='recall'),
                                # keras.metrics.F1Score(name='f1_score')
-                               ],
+                              # ],
                       optimizer=opt,
                       run_eagerly=True)
 
@@ -100,45 +102,48 @@ def logging_dirs():
 
 if __name__ == "__main__":
     logs_root_dir, log_dir = logging_dirs()
-    file_dir = '/home/wld-algo-6/DataCollection/Data'
+    file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted"#'/home/wld-algo-6/DataCollection/Data'
     person_dict = get_weight_file_from_dir(file_dir)
     person_zero_dict = {person_name: weight_dict[0] for person_name, weight_dict in person_dict.items() if 0 in weight_dict.keys()}
 
     window_size_snc = 512
     # Preprocess data
-    train_data, test_data, person_to_idx = preprocess_person_data(person_zero_dict,  window_size_snc=window_size_snc)
+    persons = ['Alisa', 'Asher2', 'Avihoo']
+    train_data, test_data, person_to_idx = preprocess_person_data(person_zero_dict,
+                                                                  window_size_snc=window_size_snc,
+                                                                  persons=persons)
 
     # Convert labels to one-hot encoding
-    num_persons = len(person_to_idx)
-    train_labels_onehot = keras.utils.to_categorical(train_data['labels'], num_persons)
-    test_labels_onehot = keras.utils.to_categorical(test_data['labels'], num_persons)
+    num_persons = len(person_to_idx) if persons == 'all' else len(persons)
+    # train_labels_onehot = keras.utils.to_categorical(train_data['labels'], num_persons)
+    # test_labels_onehot = keras.utils.to_categorical(test_data['labels'], num_persons)
 
     # Create and train model
     model = create_person_zeroid_model(
         sensor_num=2,  # Use sensor 2 data
         number_of_persons=num_persons,
-        window_size_snc=window_size_snc,
+        window_size_snc=window_size_snc, embd_dim=2,#num_persons,
         dense_activation='linear',
         learning_rate=0.016,
         # Match your input size
     )
 
-    callbacks = [
-        CustomTensorBoard(
-            log_dir=log_dir,
-            histogram_freq=1,
-            write_graph=True,
-            update_freq='epoch'
-        ),
+    callbacks = [TensorBoard(log_dir=os.path.join(log_dir, 'tensorboard')),
+        # CustomTensorBoard(
+        #     log_dir=log_dir,
+        #     histogram_freq=1,
+        #     write_graph=True,
+        #     update_freq='epoch'
+        # ),
 
     ]
     # Train the model
     history = model.fit(
         train_data['inputs'],
-        train_labels_onehot,
-        validation_data=(test_data['inputs'], test_labels_onehot),
-        # callbacks=callbacks,
-        epochs=200,
+        train_data['labels'],#train_labels_onehot,
+        validation_data=(test_data['inputs'], test_data['labels']),
+        callbacks=callbacks,
+        epochs=300,
         batch_size=128
     )
 

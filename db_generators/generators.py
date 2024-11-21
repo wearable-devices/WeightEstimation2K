@@ -305,7 +305,7 @@ class OneSncGenerator(keras.utils.Sequence):
         return [tf.stack(snc_batch)], tf.convert_to_tensor(labels)
 
 
-def preprocess_person_data(person_zero_dict, window_size_snc=306):
+def preprocess_person_data(person_zero_dict, window_size_snc=306, persons='all'):
     """
     Preprocess the person identification data dictionary into train/test sets
     with specific window size
@@ -328,27 +328,28 @@ def preprocess_person_data(person_zero_dict, window_size_snc=306):
     test_labels = []
 
     for person_name, data_list in person_zero_dict.items():
-        person_idx = person_to_idx[person_name]
+        if persons == 'all' or person_name in persons:
+            person_idx = person_to_idx[person_name]
 
-        for data_dict in data_list:
-            # Process data into windows
-            for key in ['snc_1', 'snc_2', 'snc_3']:
-                data = np.array(data_dict[key], dtype=np.float32)
+            for data_dict in data_list:
+                # Process data into windows
+                for key in ['snc_1', 'snc_2', 'snc_3']:
+                    data = np.array(data_dict[key], dtype=np.float32)
 
-                # If data is longer than window_size, split it into windows
-                num_windows = len(data) // window_size_snc
-                for i in range(num_windows):
-                    start_idx = i * window_size_snc
-                    window = data[start_idx:start_idx + window_size_snc]
+                    # If data is longer than window_size, split it into windows
+                    num_windows = len(data) // window_size_snc
+                    for i in range(num_windows):
+                        start_idx = i * window_size_snc
+                        window = data[start_idx:start_idx + window_size_snc]
 
-                    if data_dict['phase'] == 'Train':
-                        train_inputs[key].append(window)
-                        if key == 'snc_1':  # Only add label once per window set
-                            train_labels.append(person_idx)
-                    else:
-                        test_inputs[key].append(window)
-                        if key == 'snc_1':  # Only add label once per window set
-                            test_labels.append(person_idx)
+                        if data_dict['phase'] == 'Train':
+                            train_inputs[key].append(window)
+                            if key == 'snc_1':  # Only add label once per window set
+                                train_labels.append(person_idx)
+                        else:
+                            test_inputs[key].append(window)
+                            if key == 'snc_1':  # Only add label once per window set
+                                test_labels.append(person_idx)
 
     # Convert to numpy arrays
     train_data = {

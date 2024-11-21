@@ -695,3 +695,15 @@ class SEMGScatteringTransform(keras.layers.Layer):
 
         plt.tight_layout()
         plt.show()
+
+
+@keras.saving.register_keras_serializable(package='distance_layer', name='DistanceLayer')
+class DistanceLayer(keras.layers.Layer):
+    def __init__(self, fixed_points, **kwargs):
+        super(DistanceLayer, self).__init__(**kwargs)
+        self.fixed_points = fixed_points#tf.constant(fixed_points, dtype=tf.float32)
+
+    def call(self, inputs):
+        # Calculate distances using broadcasting
+        m_distances = -tf.norm(inputs[:, tf.newaxis, :] - self.fixed_points, axis=-1)
+        return m_distances

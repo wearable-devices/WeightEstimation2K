@@ -1,6 +1,7 @@
 import tensorflow as tf
 import keras
 import keras.ops as K
+from custom.layers import DistanceLayer
 # from keras.losses import Reduction
 
 class WeightedMeanSquaredError(keras.losses.Loss):
@@ -149,3 +150,32 @@ class GaussianCrossEntropyLoss(keras.losses.Loss):
 
         # Return mean loss across batch
         return tf.reduce_mean(cross_entropy)
+
+
+class ProtoLoss(keras.losses.Loss):
+    def __init__(self, number_of_persons=5,  #reduction=keras.losses.Reduction.AUTO,
+                 name='CustomLoss'):
+        super().__init__(#reduction=reduction,
+                         name=name)
+        self.number_of_persons = number_of_persons
+        # self.cosine_loss = keras.losses.CosineSimilarity(axis=-1)
+        # self.cross_entropy = keras.losses.CategoricalCrossentropy(axis=-1)
+
+    def call(self, y_true, y_pred):
+        y_tr = tf.cast(y_true, tf.int32)
+        one_hot_true = tf.one_hot(y_tr, depth=self.number_of_persons)  # unpacking the predicted output
+        partition = tf.dynamic_partition(y_pred, tf.squeeze(tf.cast(y_true, tf.int32)),
+                                         num_partitions=self.number_of_persons)
+        prototypes = [tf.reduce_mean(x, axis=0) for x in partition]
+        # print('prototypes',prototypes)
+        minus_dist = DistanceLayer(prototypes)(y_pred)
+        softmax = tf.nn.softmax(minus_dist, axis=-1)
+
+        scce = keras.losses.CategoricalCrossentropy()
+
+        loss = scce(one_hot_true, softmax)
+        # loss = softmax[0]+y_true[0]
+        # Debugging: Print the computed loss
+        # print("Loss:", loss)
+
+        return loss
