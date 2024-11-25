@@ -47,7 +47,8 @@ class SaveKerasModelCallback(keras.callbacks.Callback):
 class FeatureSpacePlotCallback(keras.callbacks.Callback):
     def __init__(self, persons_dict, trial_dir, layer_name, used_persons='all', proj='pca', metric="euclidean",
                  num_of_components='3', considered_weights=[0, 0.5, 1,2], data_mode='all',
-                 samples_per_label_per_person=10, picture_name_prefix='name', phase='train'):
+                 samples_per_label_per_person=10, picture_name_prefix='name', phase='train',
+                 task='weight_estimation'):
         super(FeatureSpacePlotCallback, self).__init__()
 
         if used_persons == 'all':
@@ -69,6 +70,7 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
         #     self.persons_dict_labeled = self.persons_dict
         self.samples_per_label_per_person = samples_per_label_per_person
         self.current_epoch = 0
+        self.task = task
 
     def on_epoch_begin(self, epoch, logs=None):
             self.current_epoch = epoch
@@ -105,54 +107,56 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
 
         layer_output_dict = {person: {} for person in
                              self.persons_dict.keys()}  # {person: {weight: [] for weight in persons_dict[person]} for person in persons_dict.keys()}
-
+        # if self.task == 'weight_estimation':
         for person, weight_dict in self.persons_dict.items():
             weight_dict_part = {weight: weight_dict[weight] for weight in self.considered_weights if
                                 weight in weight_dict}
             # label = weight
+            # if self.task == 'weight_estimation':
             for label, records in weight_dict_part.items():
                 # tf.print('recored', records)
                 # tf.print('data mode', self.data_mode)
-                if self.data_mode == 'all':
-                    used_records = records
-                else:
-                    used_records = [record for record in records if record['phase'] == self.data_mode]
-                # tf.print('used_recored', used_records)
-                if len(used_records)>0:
-                    snc1_batch = []
-                    snc2_batch = []
-                    snc3_batch = []
-                    for _ in range(self.samples_per_label_per_person):
-                        # Randomly select a file for this label
-                        file_idx = tf.random.uniform([], 0, len(records), dtype=tf.int32)
-                        file_data = records[file_idx.numpy()]
-                        # Generate a random starting point within the file
-                        start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
-                                                  dtype=tf.int32)
-                        # Extract the window
-                        snc1_batch.append(file_data['snc_1'][start:start + window_size])
-                        snc2_batch.append(file_data['snc_2'][start:start + window_size])
-                        snc3_batch.append(file_data['snc_3'][start:start + window_size])
-                        # labels.append(label)
+                if self.task == 'weight_estimation' or label == 0:
+                    if self.data_mode == 'all':
+                        used_records = records
+                    else:
+                        used_records = [record for record in records if record['phase'] == self.data_mode]
+                    # tf.print('used_recored', used_records)
+                    if len(used_records)>0:
+                        snc1_batch = []
+                        snc2_batch = []
+                        snc3_batch = []
+                        for _ in range(self.samples_per_label_per_person):
+                            # Randomly select a file for this label
+                            file_idx = tf.random.uniform([], 0, len(records), dtype=tf.int32)
+                            file_data = records[file_idx.numpy()]
+                            # Generate a random starting point within the file
+                            start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
+                                                      dtype=tf.int32)
+                            # Extract the window
+                            snc1_batch.append(file_data['snc_1'][start:start + window_size])
+                            snc2_batch.append(file_data['snc_2'][start:start + window_size])
+                            snc3_batch.append(file_data['snc_3'][start:start + window_size])
+                            # labels.append(label)
 
-                    persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
-                    if len(self.model.inputs) == 7:
-                        persons_input_data = [tf.expand_dims(snc_data, axis=1) for snc_data in persons_input_data]
-                        persons_labeled_input_dict = labeled_input_dict[person]
-                        persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
-                                                      for tensor in persons_labeled_input_dict.values()]
-                        persons_input_data = persons_input_data + persons_labeled_input_data
+                        persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
+                        if len(self.model.inputs) == 7:
+                            persons_input_data = [tf.expand_dims(snc_data, axis=1) for snc_data in persons_input_data]
+                            persons_labeled_input_dict = labeled_input_dict[person]
+                            persons_labeled_input_data = [tf.repeat(tensor[tf.newaxis, :, :], repeats=len(snc1_batch), axis=0)
+                                                          for tensor in persons_labeled_input_dict.values()]
+                            persons_input_data = persons_input_data + persons_labeled_input_data
 
-                    layer_predictions = get_layer_output(self.model, persons_input_data, self.layer_name)
-                    # tf.print('layer_pred', layer_predictions)
-                    # tf.print('actiVAT',keract.get_activations(self.model, persons_input_data, layer_names=[self.layer_name]))
-                    layer_predictions = keras.layers.Flatten()(layer_predictions)
-                    layer_output_dict[person][label] = layer_predictions
+                        layer_predictions = get_layer_output(self.model, persons_input_data, self.layer_name)
+                        # tf.print('layer_pred', layer_predictions)
+                        # tf.print('actiVAT',keract.get_activations(self.model, persons_input_data, layer_names=[self.layer_name]))
+                        layer_predictions = keras.layers.Flatten()(layer_predictions)
+                        layer_output_dict[person][label] = layer_predictions
         # Extract features from an intermediate layer and project them
         # tf.print('layer output', layer_output_dict)
         self.projected_layer_output_dict = apply_projection_to_dict(layer_output_dict,
                                                                     n_components=self.num_of_components,
-                                                                    perplexity=30, random_state=42, proj=self.proj,
+                                                                    perplexity=10, random_state=42, proj=self.proj,
                                                                     metric=self.metric)
         print(f'Feature space for layer {self.layer_name} is calculated')
         # print(self.projected_layer_output_dict)
@@ -160,109 +164,161 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
         #     print('Problem with layer', self.layer_name)
 
     def plot_feature_space_optuna(self):
-        # Color map for labels
-        color_map = {
-            0: 'red',
-            0.5: 'pink',
-            1: 'blue',
-            2: 'green',
-            4: 'yellow',
-            6: 'brown',
-            8: 'black'
-        }
+        if  self.task == 'weight_estimation':
+            # Color map for labels
+            color_map = {
+                0: 'red',
+                0.5: 'pink',
+                1: 'blue',
+                2: 'green',
+                4: 'yellow',
+                6: 'brown',
+                8: 'black'
+            }
 
-        color_map_2 = {
-            0: 'crimson',
-            0.5: 'pink',
-            1: 'navy',
-            2: 'forestgreen',  # Changed from 'forest_green' to 'forestgreen'
-            4: 'gold',
-            6: 'sienna',
-            8: 'dimgray'  # Changed from 'charcoal' to 'dimgray' as charcoal isn't a standard CSS color
-        }
+            color_map_2 = {
+                0: 'crimson',
+                0.5: 'pink',
+                1: 'navy',
+                2: 'forestgreen',  # Changed from 'forest_green' to 'forestgreen'
+                4: 'gold',
+                6: 'sienna',
+                8: 'dimgray'  # Changed from 'charcoal' to 'dimgray' as charcoal isn't a standard CSS color
+            }
 
-        # Marker map for persons
-        markers = ['square']  # , 'square-open', 'circle','square', 'diamond', 'cross', 'x', 'diamond-open']
-        marker_map = {person: markers[i % len(markers)] for i, person in enumerate(self.persons_dict.keys())}
+            # Marker map for persons
+            markers = ['square']  # , 'square-open', 'circle','square', 'diamond', 'cross', 'x', 'diamond-open']
+            marker_map = {person: markers[i % len(markers)] for i, person in enumerate(self.persons_dict.keys())}
 
-        # Create the plot
-        fig = go.Figure()
+            # Create the plot
+            fig = go.Figure()
 
-        user_num = 0
-        for person, labels in self.projected_layer_output_dict.items():
-            user_num += 1
-            used_color_map = color_map_2 if user_num % 2 == 0 else color_map
-            for label, tensor in labels.items():
-                if self.num_of_components == 2:
-                    fig.add_trace(go.Scatter(
-                        x=tensor[:, 0],
-                        y=tensor[:, 1],
-                        mode='markers',
-                        marker=dict(
-                            size=8,
-                            color=used_color_map[label],
-                            symbol=marker_map[person],
-                            opacity=0.8
-                        ),
-                        name=f"{person} - {label}"
-                    ))
-                else:
-                    fig.add_trace(go.Scatter3d(
-                        x=tensor[:, 0],
-                        y=tensor[:, 1],
-                        z=tensor[:, 2],
-                        mode='markers',
-                        marker=dict(
-                            size=8,
-                            color=used_color_map[label],
-                            symbol=marker_map[person],
-                            opacity=0.8
-                        ),
-                        # name=f"{person} - {label}"
-                        name=f" {person} - {label} kg"
-                    ))
+            user_num = 0
+            for person, labels in self.projected_layer_output_dict.items():
+                user_num += 1
+                used_color_map = color_map_2 if user_num % 2 == 0 else color_map
+                for label, tensor in labels.items():
+                    if self.num_of_components == 2:
+                        fig.add_trace(go.Scatter(
+                            x=tensor[:, 0],
+                            y=tensor[:, 1],
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color=used_color_map[label],
+                                symbol=marker_map[person],
+                                opacity=0.8
+                            ),
+                            name=f"{person} - {label}"
+                        ))
+                    else:
+                        fig.add_trace(go.Scatter3d(
+                            x=tensor[:, 0],
+                            y=tensor[:, 1],
+                            z=tensor[:, 2],
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color=used_color_map[label],
+                                symbol=marker_map[person],
+                                opacity=0.8
+                            ),
+                            # name=f"{person} - {label}"
+                            name=f" {person} - {label} kg"
+                        ))
 
-        # Update layout
-        fig.update_layout(
-            title=f"Feature Space Visualization",  # of {self.layer_name}_proj_{self.proj}_name_{self.picture_name}",
-            xaxis_title="X",
-            yaxis_title="Y",
-            legend_title="User - Weight"
-        )
 
-        # Save the plot as HTML
-        html_path = os.path.join(self.trial_dir,
-                                 f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.html")
-        fig.write_html(html_path, full_html=True)
-        # Save the plot as a GIF
-        gif_path = os.path.join(self.trial_dir,
-                                f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.gif")
+        elif self.task == 'user_id':
+            color_map = {
+                0: 'red',
+                1: 'blue',
+                2: 'green',
+                3: 'pink',
+                4: 'yellow',
+                5: 'sienna',
+                6: 'brown',
+                8: 'black',
+                9: 'pink',
+            }
 
-        # Create frames for animation
-        frames = []
-        for i in range(0, 360, 10):  # Rotate 360 degrees in steps of 10
-            fig.update_layout(scene_camera=dict(eye=dict(x=1.25 * np.cos(np.radians(i)),
-                                                         y=1.25 * np.sin(np.radians(i)),
-                                                         z=0.5)))
-            img_bytes = fig.to_image(format="png")
-            img = Image.open(io.BytesIO(img_bytes))
-            frames.append(img)
+            # Create the plot
+            fig = go.Figure()
 
-        # Save frames as GIF
-        gif_path = os.path.join(self.trial_dir,
-                                f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.gif")
+            user_num = 0
+            for person, labels in self.projected_layer_output_dict.items():
+                user_num += 1
+                for label, tensor in labels.items():
+                    if self.num_of_components == 2:
+                        fig.add_trace(go.Scatter(
+                            x=tensor[:, 0],
+                            y=tensor[:, 1],
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color=color_map[user_num],
+                                # symbol=marker_map[person],
+                                opacity=0.8
+                            ),
+                            name=f"{person} - {label}"
+                        ))
+                    else:
+                        fig.add_trace(go.Scatter3d(
+                            x=tensor[:, 0],
+                            y=tensor[:, 1],
+                            z=tensor[:, 2],
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color=color_map[user_num%10],
+                                # symbol=marker_map[person],
+                                opacity=0.8
+                            ),
+                            # name=f"{person} - {label}"
+                            name=f" {person} - {label} kg"
+                        ))
+                # user_num+=1
+                # Update layout
+                fig.update_layout(
+                    title=f"Feature Space Visualization",
+                    # of {self.layer_name}_proj_{self.proj}_name_{self.picture_name}",
+                    xaxis_title="X",
+                    yaxis_title="Y",
+                    legend_title="User - Weight"
+                )
 
-        frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=200, loop=0)
+                # Save the plot as HTML
+                html_path = os.path.join(self.trial_dir,
+                                         f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.html")
+                fig.write_html(html_path, full_html=True)
+                # Save the plot as a GIF
+                gif_path = os.path.join(self.trial_dir,
+                                        f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.gif")
 
-        print(f"Animated GIF saved to: {gif_path}")
+                # Create frames for animation
+                # frames = []
+                # for i in range(0, 360, 10):  # Rotate 360 degrees in steps of 10
+                #     fig.update_layout(scene_camera=dict(eye=dict(x=1.25 * np.cos(np.radians(i)),
+                #                                                  y=1.25 * np.sin(np.radians(i)),
+                #                                                  z=0.5)))
+                #     img_bytes = fig.to_image(format="png")
+                #     img = Image.open(io.BytesIO(img_bytes))
+                #     frames.append(img)
+                #
+                # # Save frames as GIF
+                # gif_path = os.path.join(self.trial_dir,
+                #                         f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.gif")
+                #
+                # frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=200, loop=0)
 
-        print(f"Interactive plot saved to: {html_path}")
+                # print(f"Animated GIF saved to: {gif_path}")
 
-        # # Optionally, save as PNG as well
-        # png_path = os.path.join(self.trial_dir,
-        #                         f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.png")
-        # fig.write_image(png_path)
-        # print(f"Static image saved to: {png_path}")
+                print(f"Interactive plot saved to: {html_path}")
+
+                # # Optionally, save as PNG as well
+                # png_path = os.path.join(self.trial_dir,
+                #                         f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.png")
+                # fig.write_image(png_path)
+                # print(f"Static image saved to: {png_path}")
 
     def cleanup(self):
         self.projected_layer_output_dict = None
@@ -819,6 +875,9 @@ class MetricsTrackingCallback(keras.callbacks.Callback):
             print("WARNING: model history is not initialized!")
 
 
+
+
+
 if __name__ == "__main__":
     # model_snc_path = '/home/wld-algo-5/Production/WeightEstimation/logs/13-08-2024-15-46-34/trials/trial_0/model_trial_00.keras'
     # custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain, 'OrderedAttention': OrderedAttention}
@@ -834,3 +893,8 @@ if __name__ == "__main__":
     model = keras.models.load_model(emb_map_path,  # custom_objects=custom_objects,
                                        compile=False)
 
+class NanCallback(keras.callbacks.Callback):
+    def on_batch_end(self, batch, logs=None):
+        if np.isnan(logs.get('loss')):
+            print(f"NaN loss encountered at batch {batch}")
+            self.model.stop_training = True

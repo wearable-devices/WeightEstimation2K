@@ -7,16 +7,19 @@ import keras.ops as K
 from models import get_optimizer, get_loss
 from db_generators.generators import preprocess_person_data
 from keras.callbacks import TensorBoard
+from custom.for_debug import check_for_nans, ValueMonitorCallback, \
+                LayerOutputMonitor, custom_fit, ex_model,enhanced_data_check
 from pathlib import Path
 from datetime import datetime
 from custom.losses import ProtoLoss
+from custom.callbacks import FeatureSpacePlotCallback, NanCallback
 import os
 
 from utils.get_data import get_weight_file_from_dir
 
 def create_person_zeroid_model(sensor_num=2, window_size_snc=306,
                                              J_snc=5, Q_snc=(2, 1),
-                                             undersampling=4.8,
+                                             undersampling=2,#4.8
                                              units=10, dense_activation='relu',
                                             scattering_type='old',
                                             embd_dim=5,
@@ -47,19 +50,25 @@ def create_person_zeroid_model(sensor_num=2, window_size_snc=306,
         scattered_snc2 = K.squeeze(scattered_snc2, axis=-1)
         scattered_snc3 = K.squeeze(scattered_snc3, axis=-1)
 
-    S_snc1 = K.transpose(scattered_snc1, axes=(0, 2, 1))
-    S_snc2 = K.transpose(scattered_snc2, axes=(0, 2, 1))
-    S_snc3 = K.transpose(scattered_snc3, axes=(0, 2, 1))
+        scattered_snc1 = K.transpose(scattered_snc1, axes=(0, 2, 1))
+        scattered_snc2 = K.transpose(scattered_snc2, axes=(0, 2, 1))
+        scattered_snc3 = K.transpose(scattered_snc3, axes=(0, 2, 1))
 
-    all_sensors = [S_snc1,S_snc2,S_snc3]
+    all_sensors = [scattered_snc1,scattered_snc2,scattered_snc3]
     x = all_sensors[sensor_num-1]
+    # Add a small epsilon to prevent division by zero in subsequent operations
+    # epsilon = 1e-7
+    # x = x+epsilon
 
     # Apply Time attention
 
     x = K.mean(x, axis=1)
-    x = keras.layers.Dense(units, activation=dense_activation, name = 'dense_1')(x)
-    x = keras.layers.Dense(units//2, activation=dense_activation, name='person_id')(x)
-    out = keras.layers.Dense(embd_dim, activation='softmax', name = 'person_distr')(x)
+
+    # x = keras.layers.Dense(units, activation=dense_activation, name = 'dense_1')(x)
+    # x = keras.layers.Dense(units//2, activation=dense_activation, name='person_id')(x)
+    # out = keras.layers.Dense(embd_dim, activation='softmax', name = 'person_distr')(x)
+    out = keras.layers.Dense(embd_dim, activation=dense_activation, name = 'person_id_final')(x)
+
 
 
 
@@ -108,10 +117,22 @@ if __name__ == "__main__":
 
     window_size_snc = 512
     # Preprocess data
-    persons = ['Alisa', 'Asher2', 'Avihoo']
+    persons = ['Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
+               'Leeor',
+               'Daniel',
+               #'Liav'PROBLEM
+               # 'Foad',
+               #'Molham' #PROBLEM
+               'Ofek'
+               ]#,'Guy']
     train_data, test_data, person_to_idx = preprocess_person_data(person_zero_dict,
                                                                   window_size_snc=window_size_snc,
+                                                                  window_step=54,
                                                                   persons=persons)
+
+    # After preprocessing
+    if check_for_nans(train_data) or check_for_nans(test_data):
+        raise ValueError("NaN or Inf values found in the preprocessed data")
 
     # Convert labels to one-hot encoding
     num_persons = len(person_to_idx) if persons == 'all' else len(persons)
@@ -119,16 +140,25 @@ if __name__ == "__main__":
     # test_labels_onehot = keras.utils.to_categorical(test_data['labels'], num_persons)
 
     # Create and train model
-    model = create_person_zeroid_model(
+    model = ex_model(
         sensor_num=2,  # Use sensor 2 data
+        # scattering_type='SEMG',
+        units=10,
         number_of_persons=num_persons,
-        window_size_snc=window_size_snc, embd_dim=2,#num_persons,
-        dense_activation='linear',
-        learning_rate=0.016,
+        window_size_snc=window_size_snc, embd_dim=4,
+        dense_activation='relu',
+        learning_rate=0.0016,
         # Match your input size
     )
 
     callbacks = [TensorBoard(log_dir=os.path.join(log_dir, 'tensorboard')),
+                 #LayerOutputMonitor([ 'scattering_time_domain','person_id']),
+                 NanCallback(),#ValueMonitorCallback(monitor_layers=['person_id', 'person_id_final']),
+                 FeatureSpacePlotCallback(person_dict, log_dir, layer_name='person_id_final', data_mode='Test',
+                                          proj='tsne',
+                                          metric="euclidean", picture_name_prefix='test_dict',
+                                          used_persons=persons,task='user_id',
+                                          num_of_components=2, samples_per_label_per_person=15, phase='Train')
         # CustomTensorBoard(
         #     log_dir=log_dir,
         #     histogram_freq=1,
@@ -137,13 +167,24 @@ if __name__ == "__main__":
         # ),
 
     ]
+
+    # Apply the monkey-patch to your model
+    # model.original_fit = model.fit
+    # model.fit = custom_fit.__get__(model)
+
+    # Use this function before training
+    if enhanced_data_check(train_data):
+        raise ValueError("Issues found in the training data")
+
+    if enhanced_data_check(test_data):
+        raise ValueError("Issues found in the test data")
     # Train the model
     history = model.fit(
         train_data['inputs'],
         train_data['labels'],#train_labels_onehot,
-        validation_data=(test_data['inputs'], test_data['labels']),
+        validation_data=(train_data['inputs'], train_data['labels']),
         callbacks=callbacks,
-        epochs=300,
+        epochs=30,
         batch_size=128
     )
 

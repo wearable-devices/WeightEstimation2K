@@ -8,93 +8,124 @@ from datetime import datetime
 from optuna.trial import TrialState
 from models import *
 from pathlib import Path
-from db_generators.generators import MultiInputGenerator, convert_generator_to_dataset, create_data_for_model
+from db_generators.generators import create_data_for_userId_model,UserIdModelGenerator
 from utils.get_data import get_weight_file_from_dir
 from constants import *
 from custom.callbacks import *
 # from db_generators.create_person_dict import *
 from tensorflow.keras.callbacks import ModelCheckpoint
 from custom.callbacks import get_layer_output
+from custom.for_debug import WeightMonitorCallback
 
-file_dir = '/home/wld-algo-6/DataCollection/Data'
-persons_dict = get_weight_file_from_dir(file_dir)
+from db_generators.generators import preprocess_person_data
+def ex_model(sensor_num=2, window_size_snc=306, dense_activation='relu',
+                                            embd_dim=5,number_of_persons=10,
+                                             optimizer='Adam', learning_rate=0.0016,
+                                             weight_decay=0.01,  compile=True,
+                                             ):
+    '''sensor_fusion could be 'early, attention or mean'''
+    # Define inputs to the model
+    input_layer_snc1 = keras.Input(shape=(window_size_snc,), name='snc_1')
+    # input_layer_snc1 = tf.keras.Input(shape=(rows, cols), name='Snc1')
+    input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
+    input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
 
-snc_window_size = 162
-batch_size = 1024
-labels_to_balance = [0, 500,1000,2000]
-epoch_len = 5
-data_mode='Test'
-used_persons='all'
-ex = MultiInputGenerator(
-        persons_dict,
-        window_size=snc_window_size,
-        batch_size=batch_size,
-        data_mode=data_mode,
-        labels_to_balance=labels_to_balance,
-        epoch_len=epoch_len,
-        person_names=used_persons)
+    x = input_layer_snc2
+    # x = keras.layers.BatchNormalization()(x)
+    out = keras.layers.Dense(embd_dim, activation=dense_activation,kernel_initializer='he_normal', name = 'person_id_final')(x)
 
-ex.__getitem__(0)
-ex.__len__()
+    inputs = {'snc_1': input_layer_snc1, 'snc_2': input_layer_snc2, 'snc_3': input_layer_snc3}
+    model = keras.Model(inputs=inputs,
+                           outputs=out
+                           )
+    if compile:
+        opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
 
-
-
-model_snc_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/05-11-2024-15-16-39/trials/trial_0/initial_pre_trained_model.keras'
-custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain}
-model = tf.keras.models.load_model(model_snc_path, custom_objects=custom_objects,
-                                               compile=True,
-                                               safe_mode=False)
-
-#
-# used_persons = 'all'
-# if used_persons == 'all':
-#     persons_dict = persons_dict
-# else:
-#     persons_dict = filter_dict_by_keys(persons_dict, used_persons)
-window_size = model.input['snc_1'].shape[-1]
-
-# First, print all layer names to find the ones you need
-for layer in model.layers:
-    print(layer.name)
+        model.compile(loss=ProtoLoss(number_of_persons=number_of_persons,
+                                     temperature=1),  #'categorical_crossentropy',
+                      optimizer=opt,
+                      run_eagerly=True)
 
 
+    return model
+def logging_dirs():
+    package_directory = Path(__file__).parent
+
+    logs_root_dir = package_directory / 'logs'
+    logs_root_dir.mkdir(exist_ok=True)
+    log_dir = package_directory / 'logs' / datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
+    log_dir.mkdir(exist_ok=True)
+
+    return logs_root_dir, log_dir
 
 
-samples_per_label_per_person=10
+snc_window_size = 306
+
+logs_root_dir, log_dir = logging_dirs()
+file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted"#'/home/wld-algo-6/DataCollection/Data'
+person_dict = get_weight_file_from_dir(file_dir)
+person_zero_dict = {person_name: weight_dict[0] for person_name, weight_dict in person_dict.items() if 0 in weight_dict.keys()}
+
+persons = ['Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
+               'Leeor',
+               #'Daniel',
+               'Liav',
+                'Foad',
+               'Molham',
+               'Ofek'
+               ]#,'Guy']
+train_data, test_data, person_to_idx = preprocess_person_data(person_zero_dict,
+                                                                  window_size_snc=window_size_snc,
+                                                                  window_step=54,
+                                                                  persons=persons,
+                                                                  print_stat=False,
+                                                                  multiplier=10)
+
+# After preprocessing
+# if check_for_nans(train_data) or check_for_nans(test_data):
+#     raise ValueError("NaN or Inf values found in the preprocessed data")
+
+# Convert labels to one-hot encoding
+num_persons = len(person_to_idx) if persons == 'all' else len(persons)
 
 
-output_dict = {person: {} for person in persons_dict.keys()}
-for person, weight_dict in persons_dict.items():
+# Create and train model
+model = ex_model(
+    sensor_num=2,
+    number_of_persons=num_persons,
+    window_size_snc=snc_window_size, embd_dim=10,
+    dense_activation='tanh',
+    learning_rate=0.0016,
+    # Match your input size
+)
+model.summary()
 
-    for weight, records in weight_dict.items():
-        if data_mode == 'all':
-            used_records = records
-        else:
-            used_records = [record for record in records if record['phase'] == data_mode]
-        if len(used_records)>0:
-            snc1_batch = []
-            snc2_batch = []
-            snc3_batch = []
-            for _ in range(samples_per_label_per_person):
-                # Randomly select a file for this label
-                file_idx = tf.random.uniform([], 0, len(used_records), dtype=tf.int32)
-                file_data = used_records[file_idx.numpy()]
-                # Generate a random starting point within the file
-                start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
-                                          dtype=tf.int32)
-                # Extract the window
-                snc1_batch.append(file_data['snc_1'][start:start + window_size])
-                snc2_batch.append(file_data['snc_2'][start:start + window_size])
-                snc3_batch.append(file_data['snc_3'][start:start + window_size])
-            # if len(self.model.inputs == 3): # model doesn't have labeled input
-            persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
-            layer_out = get_layer_output(model, persons_input_data, 'dense')
-            predictions = model([persons_input_data])[0]
-            # predictions = tf.squeeze(tf.keras.layers.Flatten()(predictions), axis=-1)
-            output_dict[person][weight] = predictions
+# Create person to index mapping
+person_to_idx = {name: idx for idx, name in enumerate(persons)}
+gen = UserIdModelGenerator(person_zero_dict, person_to_idx, window_size=window_size_snc,
+                           data_mode='Train', batch_size=1024,
+                             person_names=persons, epoch_len=None,
+                             contacts = ['M'])
+gen.__getitem__(0)
 
-
-ttt = 1
-
+epoch_len = None
+batch_size = 110
+train_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
+                                 epoch_len, persons,
+                                 data_mode='Train', contacts=['M'])
+val_ds = create_data_for_userId_model(person_zero_dict,person_to_idx, snc_window_size, batch_size,
+                                       epoch_len,persons,
+                                      data_mode='Test',contacts=['M'])
+model.fit(
+        train_ds,
+        validation_data=val_ds,
+        callbacks=[NanCallback(), WeightMonitorCallback(
+                            print_freq='epoch',  # 'epoch' or 'batch'
+                            layer_wise=True,     # Print stats for each layer
+                            detailed_stats=True  # Print detailed statistics
+)],
+        epochs=1000,
+        batch_size=128
+    )
 import tensorflow as tf
 print("TensorFlow version:", tf.__version__)

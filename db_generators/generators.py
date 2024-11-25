@@ -104,6 +104,140 @@ class MultiInputGenerator(keras.utils.Sequence):
         #         tf.stack(snc3_batch)], [tf.convert_to_tensor(labels),  tf.convert_to_tensor(labels),tf.convert_to_tensor(labels),tf.convert_to_tensor(labels)]
 
 
+class UserIdModelGenerator(keras.utils.Sequence):
+    def __init__(self, person_zero_dict, person_to_idx, window_size, data_mode='all', batch_size=1024,
+                 person_names=None, epoch_len=None,
+                 contacts = ['L','M','R']):
+        self.persons_zero_dict = person_zero_dict
+        self.person_to_idx = person_to_idx
+        self.window_size = window_size
+        self.batch_size = batch_size
+        self.person_names = list(self.persons_dict.keys()) if person_names is 'all' else person_names
+        self.epoch_len = epoch_len
+        self.phase = data_mode
+        self.contacts = contacts
+        self.samples_per_person = self.batch_size // (len(self.person_names))
+
+    def __len__(self):
+        # Assuming all persons have the same number of files
+        try:
+            weight_rec_num = len(self.persons_dict[self.person_names[0]][0.5]) # quantity of persons records for each weight
+        except:
+            weight_rec_num=1
+        try:
+            window_num = (1+(len(self.persons_dict[self.person_names[0]][1][0]['snc_1'])-self.window_size)//18)
+        except:
+            ttt = 1
+        if self.epoch_len is None:
+            epoch_len = int(window_num*weight_rec_num/self.samples_per_label_per_person)
+        else:
+            epoch_len = self.epoch_len
+        return epoch_len#sum(len(files) for files in self.processed_data[self.person_names[0]].values())
+
+    def __getitem__(self, idx):
+
+        snc1_batch = []
+        snc2_batch = []
+        snc3_batch = []
+        labels = []
+
+        # # Create person to index mapping
+        # person_to_idx = {name: idx for idx, name in enumerate(self.person_names)}
+
+        for person_name in self.person_names:
+            if self.phase == 'all':
+                person_data = self.persons_zero_dict[person_name]
+            else:
+                try:
+                    person_data =  [record   for  record in self.persons_zero_dict[person_name] if record['contact'] in self.contacts]
+                except:
+                    print(person_name)
+                    print(self.persons_dict[person_name])
+            try:
+                person_data = [record for record in person_data  if record['contact'] in self.contacts]
+            except:
+                print('contact', person_name, {weight: [record for record in records  if record['contact'] in self.contacts] for weight, records in person_data.items()})
+
+            for _ in range(self.samples_per_person):
+                # Randomly select a file
+                try:
+                    file_idx = tf.random.uniform([], 0, len(person_data), dtype=tf.int32)
+                except:
+                    print(f'Problrm with {person_name}  {person_data}')
+                    continue
+                file_data = person_data[file_idx.numpy()]
+
+                if tf.shape(file_data['snc_1'])[0] - self.window_size + 1>0:
+                    # Generate a random starting point within the file
+                    start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - self.window_size + 1,
+                                              dtype=tf.int32)
+
+                    # Extract the window
+                    snc1_batch.append(file_data['snc_1'][start:start + self.window_size])
+                    snc2_batch.append(file_data['snc_2'][start:start + self.window_size])
+                    snc3_batch.append(file_data['snc_3'][start:start + self.window_size])
+                    labels.append(self.person_to_idx[person_name])
+                else:
+                    tf.print('Short file ', person_name)
+                # But return as a tuple of (inputs_dict, outputs_list)
+        inputs = {
+            'snc_1': tf.stack(snc1_batch),
+            'snc_2': tf.stack(snc2_batch),
+            'snc_3': tf.stack(snc3_batch)
+        }
+        outputs =  tf.convert_to_tensor(labels)
+        return inputs, outputs
+def convert_userIdModelgenerator_to_dataset(generator):
+    def gen_wrapper():
+        for i in range(len(generator)):
+            inputs, outputs = generator[i]
+            # Convert list outputs to tuple
+            yield (
+                {
+                    'snc_1': inputs['snc_1'],
+                    'snc_2': inputs['snc_2'],
+                    'snc_3': inputs['snc_3']
+                },
+                outputs
+            )
+
+    # Define the output signature
+    output_signature = (
+        # Input signatures
+        {
+            'snc_1': tf.TensorSpec(shape=(None, generator.window_size), dtype=tf.float32),
+            'snc_2': tf.TensorSpec(shape=(None, generator.window_size), dtype=tf.float32),
+            'snc_3': tf.TensorSpec(shape=(None, generator.window_size), dtype=tf.float32)
+        },
+        # Output signatures
+
+            tf.TensorSpec(shape=(None,), dtype=tf.int32)
+
+    )
+
+    return tf.data.Dataset.from_generator(
+        gen_wrapper,
+        output_signature=output_signature
+    )
+
+def create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
+                                 epoch_len, used_persons,
+                                 data_mode='all', contacts=['L','M','R']):
+    # Create datasets
+    train_generator = UserIdModelGenerator(
+        person_zero_dict,person_to_idx,
+        window_size=snc_window_size,
+        batch_size=batch_size,
+        data_mode=data_mode,
+        epoch_len=epoch_len,
+        person_names=used_persons,
+        contacts=contacts
+    )
+
+    train_ds = convert_userIdModelgenerator_to_dataset(train_generator)
+    return train_ds
+
+
 def convert_generator_to_dataset(generator):
     def gen_wrapper():
         for i in range(len(generator)):
@@ -305,7 +439,8 @@ class OneSncGenerator(keras.utils.Sequence):
         return [tf.stack(snc_batch)], tf.convert_to_tensor(labels)
 
 
-def preprocess_person_data(person_zero_dict, window_size_snc=306, persons='all'):
+def preprocess_person_data(person_zero_dict, window_size_snc=306, window_step=18, persons='all',
+                           print_stat=False, multiplier=1):
     """
     Preprocess the person identification data dictionary into train/test sets
     with specific window size
@@ -319,8 +454,10 @@ def preprocess_person_data(person_zero_dict, window_size_snc=306, persons='all')
         test_data: Dict with 'inputs' and 'labels' for testing
         person_to_idx: Dict mapping person names to label indices
     """
+    if persons == 'all':
+        persons  = person_zero_dict.keys()
     # Create person to index mapping
-    person_to_idx = {name: idx for idx, name in enumerate(person_zero_dict.keys())}
+    person_to_idx = {name: idx for idx, name in enumerate(persons)}
 
     train_inputs = {'snc_1': [], 'snc_2': [], 'snc_3': []}
     train_labels = []
@@ -333,13 +470,21 @@ def preprocess_person_data(person_zero_dict, window_size_snc=306, persons='all')
 
             for data_dict in data_list:
                 # Process data into windows
+                data_len = len(np.array(data_dict['snc_1'], dtype=np.float32))
                 for key in ['snc_1', 'snc_2', 'snc_3']:
-                    data = np.array(data_dict[key], dtype=np.float32)
+
+                    data = multiplier * np.array(data_dict[key], dtype=np.float32)
+                    if print_stat:
+                        print(f'get {person_name} data')
+                        print(f'max abs {key} is {max(abs(data))}')
+
+                    if len(data) != data_len:
+                        print(f'Data shape mismatch for {person_name}')
 
                     # If data is longer than window_size, split it into windows
-                    num_windows = len(data) // window_size_snc
-                    for i in range(num_windows):
-                        start_idx = i * window_size_snc
+                    # num_windows = len(data) // window_size_snc
+                    for i in range(0, len(data)-window_size_snc, window_step):
+                        start_idx = i #* window_size_snc
                         window = data[start_idx:start_idx + window_size_snc]
 
                         if data_dict['phase'] == 'Train':

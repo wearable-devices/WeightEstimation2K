@@ -12,7 +12,7 @@ def get_optimizer(optimizer = 'LAMB',learning_rate=0.001, weight_decay=0.0):
     # if optimizer == 'LAMB':
     #     opt = tfa.optimizers.LAMB(learning_rate=learning_rate, beta_1=0.9, weight_decay=weight_decay)
     if optimizer == 'Adam':
-        opt = tf.optimizers.Adam(learning_rate=learning_rate)
+        opt = tf.optimizers.Adam(learning_rate=learning_rate, clipnorm=1.0)
     elif optimizer == 'SGD':
         opt = tf.optimizers.SGD(learning_rate=learning_rate)
     else:

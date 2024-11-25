@@ -152,30 +152,122 @@ class GaussianCrossEntropyLoss(keras.losses.Loss):
         return tf.reduce_mean(cross_entropy)
 
 
+def calculate_distances(y_pred, prototypes):
+    """
+    Calculate Euclidean distances between predictions and prototypes using Keras/TF.
+
+    Args:
+        y_pred: Tensor of shape (batch_size, embd_dim)
+        prototypes: List of num_pers tensors, each of shape (embd_dim,)
+
+    Returns:
+        Tensor of shape (batch_size, num_pers) containing distances
+    """
+    # Convert list of prototypes to a tensor
+    proto_tensor = tf.stack(prototypes)  # Shape: (num_pers, embd_dim)
+
+    # Expand dimensions to enable broadcasting
+    # y_pred: (batch_size, 1, embd_dim)
+    # proto_tensor: (1, num_pers, embd_dim)
+    y_pred_expanded = tf.expand_dims(y_pred, axis=1)
+    proto_expanded = tf.expand_dims(proto_tensor, axis=0)
+
+    # Calculate squared differences
+    squared_diff = tf.square(y_pred_expanded - proto_expanded)
+
+    # Sum along embedding dimension and take square root
+    distances = tf.sqrt(tf.reduce_sum(squared_diff, axis=2))
+
+    return distances
+
+
+def analyze_prototype_distances(prototypes):
+    """
+    Calculate distances between all pairs of prototypes and find the minimum distance.
+    Using Keras 3 operations.
+
+    Args:
+        prototypes: List of tensors, each of shape (embd_dim,)
+
+    Returns:
+        min_distance: Minimum distance between any pair of prototypes
+        closest_pair: Tuple of indices (i, j) of the closest prototypes
+        all_distances: Matrix of all pairwise distances
+    """
+    # Convert list of prototypes to a tensor
+    proto_tensor = keras.ops.stack(prototypes)  # Shape: (num_protos, embd_dim)
+    num_protos = len(prototypes)
+
+    # Calculate pairwise distances between all prototypes
+    # Expand dimensions for broadcasting
+    p1 = keras.ops.expand_dims(proto_tensor, axis=0)  # Shape: (1, num_protos, embd_dim)
+    p2 = keras.ops.expand_dims(proto_tensor, axis=1)  # Shape: (num_protos, 1, embd_dim)
+
+    # Calculate Euclidean distances
+    distances = keras.ops.sqrt(keras.ops.sum(keras.ops.square(p1 - p2), axis=2))
+
+    # Create a mask for the diagonal (self-distances)
+    mask = keras.ops.eye(num_protos) * 1e10
+
+    # Add mask to distances to ignore self-distances
+    masked_distances = distances + mask
+
+    # Find minimum distance and corresponding indices
+    min_distance = keras.ops.min(masked_distances)
+
+    # Find indices of minimum distance
+    min_indices = keras.ops.where(keras.ops.equal(masked_distances, min_distance))[0]
+    closest_pair = (0,1)#(int(min_indices[0]), int(min_indices[1]))
+
+    return min_distance, closest_pair, distances
+
 class ProtoLoss(keras.losses.Loss):
-    def __init__(self, number_of_persons=5,  #reduction=keras.losses.Reduction.AUTO,
+    def __init__(self, number_of_persons=5,temperature=2,  #reduction=keras.losses.Reduction.AUTO,
                  name='CustomLoss'):
         super().__init__(#reduction=reduction,
                          name=name)
         self.number_of_persons = number_of_persons
+        self.temperature = temperature
         # self.cosine_loss = keras.losses.CosineSimilarity(axis=-1)
         # self.cross_entropy = keras.losses.CategoricalCrossentropy(axis=-1)
 
     def call(self, y_true, y_pred):
+        # Add debugging prints
+        has_nans = tf.math.reduce_any(tf.math.is_nan(y_pred))
+        if has_nans:
+            print('There is Nan values in y_pred')
+        # print("y_true shape:", K.shape(y_true))
+        # print("y_pred shape:", K.shape(y_pred))
         y_tr = tf.cast(y_true, tf.int32)
         one_hot_true = tf.one_hot(y_tr, depth=self.number_of_persons)  # unpacking the predicted output
         partition = tf.dynamic_partition(y_pred, tf.squeeze(tf.cast(y_true, tf.int32)),
                                          num_partitions=self.number_of_persons)
         prototypes = [tf.reduce_mean(x, axis=0) for x in partition]
+        # prototypes = tf.convert_to_tensor(prototypes)
         # print('prototypes',prototypes)
-        minus_dist = DistanceLayer(prototypes)(y_pred)
-        softmax = tf.nn.softmax(minus_dist, axis=-1)
+        # for prototype in prototypes:
+        #     print(f'prototype {prototype}')
+        min_distance, closest_pair, distances = analyze_prototype_distances(prototypes)
+        # batch_size = y_true.shape[0]
+        # dist = tf.zeros((batch_size,self.number_of_persons ))
+        # for person_num in y_true:
+        #     dist[tf.cast(tf.squeeze(tf.where(y_true==person_num), axis=1), dtype=tf.int32),:]=tf.norm(person_num - prototypes[person_num,:], axis=-1)
+        # minus_dist = -tf.norm(y_pred - prototypes, axis=-1)#
+        # DistanceLayer(prototypes)(y_pred)
+        dist = calculate_distances(y_pred, prototypes)/self.temperature
+        softmax = tf.nn.softmax(-dist, axis=-1)
 
         scce = keras.losses.CategoricalCrossentropy()
 
+
         loss = scce(one_hot_true, softmax)
+        # loss = keras.losses.categorical_crossentropy(one_hot_true, softmax)
         # loss = softmax[0]+y_true[0]
         # Debugging: Print the computed loss
         # print("Loss:", loss)
+        print(f' min dist {min_distance}')
+        if tf.math.reduce_any(tf.math.is_nan(min_distance)):
+            for prototype in prototypes:
+                print(f'prototype {prototype}')
 
         return loss

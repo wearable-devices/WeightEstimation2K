@@ -490,7 +490,8 @@ class SEMGScatteringTransform(keras.layers.Layer):
 
 
         # Calculate magnitude (as before)
-        magnitude = tf.math.sqrt(tf.math.add(tf.square(real_response), tf.square(imag_response)))
+        # magnitude = tf.math.sqrt(tf.math.add(tf.square(real_response), tf.square(imag_response)))
+        magnitude = tf.sqrt(tf.maximum(tf.square(real_response) + tf.square(imag_response), 1e-7))
 
         # Calculate phase
         phase = tf.math.atan2(imag_response, real_response)
