@@ -129,7 +129,7 @@ class UserIdModelGenerator(keras.utils.Sequence):
         except:
             ttt = 1
         if self.epoch_len is None:
-            epoch_len = int(window_num*weight_rec_num/self.samples_per_label_per_person)
+            epoch_len = int(window_num*weight_rec_num/self.samples_per_person)
         else:
             epoch_len = self.epoch_len
         return epoch_len#sum(len(files) for files in self.processed_data[self.person_names[0]].values())

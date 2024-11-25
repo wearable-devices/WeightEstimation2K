@@ -14,6 +14,7 @@ from datetime import datetime
 from custom.losses import ProtoLoss
 from custom.callbacks import FeatureSpacePlotCallback, NanCallback
 import os
+from db_generators.generators import create_data_for_userId_model
 
 from utils.get_data import get_weight_file_from_dir
 
@@ -115,7 +116,7 @@ if __name__ == "__main__":
     person_dict = get_weight_file_from_dir(file_dir)
     person_zero_dict = {person_name: weight_dict[0] for person_name, weight_dict in person_dict.items() if 0 in weight_dict.keys()}
 
-    window_size_snc = 512
+    snc_window_size = 512
     # Preprocess data
     persons = ['Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
                'Leeor',
@@ -125,14 +126,21 @@ if __name__ == "__main__":
                #'Molham' #PROBLEM
                'Ofek'
                ]#,'Guy']
-    train_data, test_data, person_to_idx = preprocess_person_data(person_zero_dict,
-                                                                  window_size_snc=window_size_snc,
-                                                                  window_step=54,
-                                                                  persons=persons)
 
-    # After preprocessing
-    if check_for_nans(train_data) or check_for_nans(test_data):
-        raise ValueError("NaN or Inf values found in the preprocessed data")
+    # Create person to index mapping
+    person_to_idx = {name: idx for idx, name in enumerate(persons)}
+    num_persons = len(person_to_idx) if persons == 'all' else len(persons)
+
+    epoch_len = 30  # None
+    batch_size = 512
+    train_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
+                                            epoch_len, persons,
+                                            data_mode='Train', contacts=['M'])
+    val_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
+                                          epoch_len, persons,
+                                          data_mode='Test', contacts=['M'])
+
+
 
     # Convert labels to one-hot encoding
     num_persons = len(person_to_idx) if persons == 'all' else len(persons)
@@ -140,15 +148,15 @@ if __name__ == "__main__":
     # test_labels_onehot = keras.utils.to_categorical(test_data['labels'], num_persons)
 
     # Create and train model
-    model = ex_model(
-        sensor_num=2,  # Use sensor 2 data
-        # scattering_type='SEMG',
-        units=10,
-        number_of_persons=num_persons,
-        window_size_snc=window_size_snc, embd_dim=4,
-        dense_activation='relu',
-        learning_rate=0.0016,
-        # Match your input size
+    model = create_person_zeroid_model(
+                        sensor_num=2,  # Use sensor 2 data
+                        # scattering_type='SEMG',
+                        units=10,
+                        number_of_persons=num_persons,
+                        window_size_snc=snc_window_size, embd_dim=4,
+                        dense_activation='relu',
+                        learning_rate=0.0016,
+                        # Match your input size
     )
 
     callbacks = [TensorBoard(log_dir=os.path.join(log_dir, 'tensorboard')),
@@ -159,30 +167,12 @@ if __name__ == "__main__":
                                           metric="euclidean", picture_name_prefix='test_dict',
                                           used_persons=persons,task='user_id',
                                           num_of_components=2, samples_per_label_per_person=15, phase='Train')
-        # CustomTensorBoard(
-        #     log_dir=log_dir,
-        #     histogram_freq=1,
-        #     write_graph=True,
-        #     update_freq='epoch'
-        # ),
-
     ]
 
-    # Apply the monkey-patch to your model
-    # model.original_fit = model.fit
-    # model.fit = custom_fit.__get__(model)
-
-    # Use this function before training
-    if enhanced_data_check(train_data):
-        raise ValueError("Issues found in the training data")
-
-    if enhanced_data_check(test_data):
-        raise ValueError("Issues found in the test data")
     # Train the model
     history = model.fit(
-        train_data['inputs'],
-        train_data['labels'],#train_labels_onehot,
-        validation_data=(train_data['inputs'], train_data['labels']),
+        train_ds,
+        validation_data=val_ds,
         callbacks=callbacks,
         epochs=30,
         batch_size=128

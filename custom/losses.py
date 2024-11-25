@@ -236,17 +236,12 @@ class ProtoLoss(keras.losses.Loss):
         has_nans = tf.math.reduce_any(tf.math.is_nan(y_pred))
         if has_nans:
             print('There is Nan values in y_pred')
-        # print("y_true shape:", K.shape(y_true))
-        # print("y_pred shape:", K.shape(y_pred))
         y_tr = tf.cast(y_true, tf.int32)
         one_hot_true = tf.one_hot(y_tr, depth=self.number_of_persons)  # unpacking the predicted output
         partition = tf.dynamic_partition(y_pred, tf.squeeze(tf.cast(y_true, tf.int32)),
                                          num_partitions=self.number_of_persons)
         prototypes = [tf.reduce_mean(x, axis=0) for x in partition]
-        # prototypes = tf.convert_to_tensor(prototypes)
-        # print('prototypes',prototypes)
-        # for prototype in prototypes:
-        #     print(f'prototype {prototype}')
+
         min_distance, closest_pair, distances = analyze_prototype_distances(prototypes)
         # batch_size = y_true.shape[0]
         # dist = tf.zeros((batch_size,self.number_of_persons ))
@@ -265,7 +260,7 @@ class ProtoLoss(keras.losses.Loss):
         # loss = softmax[0]+y_true[0]
         # Debugging: Print the computed loss
         # print("Loss:", loss)
-        print(f' min dist {min_distance}')
+        # print(f' min dist {min_distance}')
         if tf.math.reduce_any(tf.math.is_nan(min_distance)):
             for prototype in prototypes:
                 print(f'prototype {prototype}')

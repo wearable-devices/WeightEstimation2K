@@ -74,18 +74,19 @@ persons = ['Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
                'Molham',
                'Ofek'
                ]#,'Guy']
-train_data, test_data, person_to_idx = preprocess_person_data(person_zero_dict,
-                                                                  window_size_snc=window_size_snc,
-                                                                  window_step=54,
-                                                                  persons=persons,
-                                                                  print_stat=False,
-                                                                  multiplier=10)
+# train_data, test_data, person_to_idx = preprocess_person_data(person_zero_dict,
+#                                                                   window_size_snc=snc_window_size,
+#                                                                   window_step=54,
+#                                                                   persons=persons,
+#                                                                   print_stat=False,
+#                                                                   multiplier=10)
 
 # After preprocessing
 # if check_for_nans(train_data) or check_for_nans(test_data):
 #     raise ValueError("NaN or Inf values found in the preprocessed data")
 
-# Convert labels to one-hot encoding
+# Create person to index mapping
+person_to_idx = {name: idx for idx, name in enumerate(persons)}
 num_persons = len(person_to_idx) if persons == 'all' else len(persons)
 
 
@@ -100,15 +101,15 @@ model = ex_model(
 )
 model.summary()
 
-# Create person to index mapping
-person_to_idx = {name: idx for idx, name in enumerate(persons)}
-gen = UserIdModelGenerator(person_zero_dict, person_to_idx, window_size=window_size_snc,
+
+gen = UserIdModelGenerator(person_zero_dict, person_to_idx, window_size=snc_window_size,
                            data_mode='Train', batch_size=1024,
                              person_names=persons, epoch_len=None,
                              contacts = ['M'])
 gen.__getitem__(0)
+gen.__len__
 
-epoch_len = None
+epoch_len = 10#None
 batch_size = 110
 train_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
                                  epoch_len, persons,
@@ -119,11 +120,7 @@ val_ds = create_data_for_userId_model(person_zero_dict,person_to_idx, snc_window
 model.fit(
         train_ds,
         validation_data=val_ds,
-        callbacks=[NanCallback(), WeightMonitorCallback(
-                            print_freq='epoch',  # 'epoch' or 'batch'
-                            layer_wise=True,     # Print stats for each layer
-                            detailed_stats=True  # Print detailed statistics
-)],
+        callbacks=[NanCallback()],
         epochs=1000,
         batch_size=128
     )
