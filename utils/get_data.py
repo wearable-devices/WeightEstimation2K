@@ -91,8 +91,8 @@ def get_weight_file_from_dir(file_dir):
        """
     persons_dict = {}
     for dirpath, dirnames, filenames in os.walk(file_dir):
-        # phase = dirpath.split('/')[-1]
-        phase = dirpath.split('\\')[-1]
+        phase = dirpath.split('/')[-1]
+        # phase = dirpath.split('\\')[-1]
         for filename in filenames:
             if re.search(r'weight', filename) and filename.endswith('.csv'):
                 # username_numexp_expname_label_force_orientation_contact

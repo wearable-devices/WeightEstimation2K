@@ -222,23 +222,35 @@ def analyze_prototype_distances(prototypes):
     return min_distance, closest_pair, distances
 
 class ProtoLoss(keras.losses.Loss):
-    def __init__(self, number_of_persons=5,temperature=1,  #reduction=keras.losses.Reduction.AUTO,
+    def __init__(self, number_of_persons=5,temperature=1, proto_meaning='users', reduction='sum_over_batch_size',
                  name='CustomLoss'):
         super().__init__(#reduction=reduction,
                          name=name)
+        '''proto_meaning could be users or weights'''
         self.number_of_persons = number_of_persons
         self.temperature = temperature
+        self.proto_meaning = proto_meaning
         # self.cosine_loss = keras.losses.CosineSimilarity(axis=-1)
         # self.cross_entropy = keras.losses.CategoricalCrossentropy(axis=-1)
+
 
     def call(self, y_true, y_pred):
         # Add debugging prints
         has_nans = tf.math.reduce_any(tf.math.is_nan(y_pred))
         if has_nans:
             print('There is Nan values in y_pred')
-        y_tr = tf.cast(y_true, tf.int32)
+
+        if self.proto_meaning == 'weight':
+            all_used_weights =sorted(set(y_true.numpy()))
+            # value_to_index = {0.0: 0, 0.5: 1, 1.0: 2, 2.0: 3}
+            weight_to_index = {weight: i for i,weight in enumerate(all_used_weights)}
+            # Convert your float tensor to integers
+            y_tr = tf.map_fn(lambda x: int(weight_to_index[float(x)]), y_true)
+            y_tr = tf.cast(y_tr, tf.int32)
+        else:
+            y_tr = tf.cast(y_true, tf.int32)
         one_hot_true = tf.one_hot(y_tr, depth=self.number_of_persons)  # unpacking the predicted output
-        partition = tf.dynamic_partition(y_pred, tf.squeeze(tf.cast(y_true, tf.int32)),
+        partition = tf.dynamic_partition(y_pred, tf.squeeze(y_tr),
                                          num_partitions=self.number_of_persons)
         prototypes = [tf.reduce_mean(x, axis=0) for x in partition]
 
@@ -266,3 +278,16 @@ class ProtoLoss(keras.losses.Loss):
                 print(f'prototype {prototype}')
 
         return loss
+
+    def get_config(self):
+        base_config = super().get_config()
+        return {
+            **base_config,
+            "number_of_persons": self.number_of_persons,
+            "temperature": self.temperature,
+            "proto_meaning": self.proto_meaning,
+        }
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
