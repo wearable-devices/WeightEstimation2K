@@ -222,7 +222,7 @@ def analyze_prototype_distances(prototypes):
     return min_distance, closest_pair, distances
 
 class ProtoLoss(keras.losses.Loss):
-    def __init__(self, number_of_persons=5,temperature=2,  #reduction=keras.losses.Reduction.AUTO,
+    def __init__(self, number_of_persons=5,temperature=1,  #reduction=keras.losses.Reduction.AUTO,
                  name='CustomLoss'):
         super().__init__(#reduction=reduction,
                          name=name)
