@@ -185,8 +185,8 @@ if __name__ == "__main__":
         # Or create a dictionary for better readability
         metrics_dict = dict(zip(model.metrics_names, metrics_values))
         print("Loss:", metrics_dict['loss'])  # MSE loss
-        print("MAE:", metrics_dict['mae'])  # Mean Absolute Error
-        print("MSE:", metrics_dict['mse'])  # Mean Squared Error
+        # print("MAE:", metrics_dict['mae'])  # Mean Absolute Error
+        # print("MSE:", metrics_dict['mse'])  # Mean Squared Error
 
     window_size = model.input['snc_1'].shape[-1]
 

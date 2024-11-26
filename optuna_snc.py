@@ -49,7 +49,7 @@ def objective(trial):
 
     # Define the search space and sample parameter values
     snc_window_size_hp = trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
-    addition_weight_hp = trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
+    addition_weight_hp = 0#trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
     epoch_num =  30
     epoch_len = 5  # None
     use_pretrained_model = True  # trial.suggest_categorical('use_pretrained_model',[True, False])
@@ -142,7 +142,7 @@ def objective(trial):
                                                     'use_attention': trial.suggest_categorical('use_attention', [True, False ]),
                                                     'attention_layers_for_one_sensor': 1,
                                                     'use_time_ordering': False,
-                                                    'scattering_type': trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
+                                                    'scattering_type': 'SEMG',#trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
                                                     'final_activation': trial.suggest_categorical('final_activation',['sigmoid', 'tanh']),
                                                     'optimizer': 'Adam', 'learning_rate': 0.0016,
                                                     'weight_decay': 0.0, 'max_weight': 2+addition_weight_hp, 'compile': True,
@@ -163,7 +163,7 @@ def objective(trial):
 
     # persons_val_loss_dict = {person: 0 for person in persons_dirs}
     # model = create_attention_weight_distr_estimation_model(**attention_distr_snc_model_parameters_dict)
-    model = create_one_sensors_weight_estimation_model(sensor_num=2, **average_sensors_weight_estimation_model_dict)
+    model = create_one_sensors_weight_estimation_model(sensor_num=1, **average_sensors_weight_estimation_model_dict)
 
     # model = create_rms_weight_estimation_model(**attention_snc_model_parameters_dict)
     model.summary()
