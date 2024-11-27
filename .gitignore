@@ -6,3 +6,5 @@
 *.gif
 logs/
 UserIDmodels/model_trial_2 (1).keras
+
+MODELS/initial_pre_trained_model.keras

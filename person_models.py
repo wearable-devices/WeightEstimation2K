@@ -35,7 +35,6 @@ def create_person_zeroid_model(sensor_num=2, window_size_snc=306,
     '''sensor_fusion could be 'early, attention or mean'''
     # Define inputs to the model
     input_layer_snc1 = keras.Input(shape=(window_size_snc,), name='snc_1')
-    # input_layer_snc1 = tf.keras.Input(shape=(rows, cols), name='Snc1')
     input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
     input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
 

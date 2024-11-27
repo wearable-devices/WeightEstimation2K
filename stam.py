@@ -8,7 +8,7 @@ from datetime import datetime
 from optuna.trial import TrialState
 from models import *
 from pathlib import Path
-from db_generators.generators import create_data_for_userId_model,UserIdModelGenerator
+from db_generators.generators import create_data_for_userId_model,UserIdModelGenerator, create_data_for_model
 from utils.get_data import get_weight_file_from_dir
 from constants import *
 from custom.callbacks import *
@@ -18,36 +18,7 @@ from custom.callbacks import get_layer_output
 from custom.for_debug import WeightMonitorCallback
 
 from db_generators.generators import preprocess_person_data
-def ex_model(sensor_num=2, window_size_snc=306, dense_activation='relu',
-                                            embd_dim=5,number_of_persons=10,
-                                             optimizer='Adam', learning_rate=0.0016,
-                                             weight_decay=0.01,  compile=True,
-                                             ):
-    '''sensor_fusion could be 'early, attention or mean'''
-    # Define inputs to the model
-    input_layer_snc1 = keras.Input(shape=(window_size_snc,), name='snc_1')
-    # input_layer_snc1 = tf.keras.Input(shape=(rows, cols), name='Snc1')
-    input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
-    input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
-
-    x = input_layer_snc2
-    # x = keras.layers.BatchNormalization()(x)
-    out = keras.layers.Dense(embd_dim, activation=dense_activation,kernel_initializer='he_normal', name = 'person_id_final')(x)
-
-    inputs = {'snc_1': input_layer_snc1, 'snc_2': input_layer_snc2, 'snc_3': input_layer_snc3}
-    model = keras.Model(inputs=inputs,
-                           outputs=out
-                           )
-    if compile:
-        opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
-
-        model.compile(loss=ProtoLoss(number_of_persons=number_of_persons,
-                                     temperature=1),  #'categorical_crossentropy',
-                      optimizer=opt,
-                      run_eagerly=True)
-
-
-    return model
+from models_dir.model_fusion import one_sensor_model_fusion
 def logging_dirs():
     package_directory = Path(__file__).parent
 
@@ -59,20 +30,20 @@ def logging_dirs():
     return logs_root_dir, log_dir
 
 
-snc_window_size = 306
+snc_window_size = 1062
 
 logs_root_dir, log_dir = logging_dirs()
-file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted"#'/home/wld-algo-6/DataCollection/Data'
+file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted_old"#'/home/wld-algo-6/DataCollection/Data'
 person_dict = get_weight_file_from_dir(file_dir)
 person_zero_dict = {person_name: weight_dict[0] for person_name, weight_dict in person_dict.items() if 0 in weight_dict.keys()}
 
-persons = ['Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
+persons = [#'Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
                'Leeor',
-               #'Daniel',
-               'Liav',
-                'Foad',
-               'Molham',
-               'Ofek'
+               'Daniel',
+              # 'Liav',
+              #  'Foad',
+              # 'Molham',
+              # 'Ofek'
                ]#,'Guy']
 # train_data, test_data, person_to_idx = preprocess_person_data(person_zero_dict,
 #                                                                   window_size_snc=snc_window_size,
@@ -89,39 +60,30 @@ persons = ['Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
 person_to_idx = {name: idx for idx, name in enumerate(persons)}
 num_persons = len(person_to_idx) if persons == 'all' else len(persons)
 
-
-# Create and train model
-model = ex_model(
-    sensor_num=2,
-    number_of_persons=num_persons,
-    window_size_snc=snc_window_size, embd_dim=10,
-    dense_activation='tanh',
-    learning_rate=0.0016,
-    # Match your input size
-)
-model.summary()
-
-
-gen = UserIdModelGenerator(person_zero_dict, person_to_idx, window_size=snc_window_size,
-                           data_mode='Train', batch_size=1024,
-                             person_names=persons, epoch_len=None,
-                             contacts = ['M'])
-gen.__getitem__(0)
-gen.__len__
-
+model_snc_path = r"C:\Users\sofia.a\PycharmProjects\Production\WeightEstimation2K\MODELS\initial_pre_trained_model.keras"
+model_1 = keras.models.load_model(model_snc_path, #custom_objects=custom_objects,
+                                               #compile=True,
+                                               safe_mode=False)
+model = one_sensor_model_fusion(model_1, model_1, model_1,
+                             fusion_type='majority_vote',
+                             window_size_snc=snc_window_size,
+                             trainable=False,
+                             optimizer='Adam', learning_rate=0.0016,compile=True,
+                             )
 epoch_len = 10#None
 batch_size = 110
-train_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
-                                 epoch_len, persons,
-                                 data_mode='Train', contacts=['M'])
-val_ds = create_data_for_userId_model(person_zero_dict,person_to_idx, snc_window_size, batch_size,
-                                       epoch_len,persons,
-                                      data_mode='Test',contacts=['M'])
+labels_to_balance = [0,0.5,1,2]
+train_ds = create_data_for_model(person_dict, snc_window_size, batch_size, labels_to_balance, epoch_len, persons,
+                          data_mode='Train', contacts=['M'])
+val_ds = create_data_for_model(person_dict, snc_window_size, batch_size, labels_to_balance, epoch_len, persons,
+                          data_mode='Test', contacts=['M'])
+
+
 model.fit(
         train_ds,
         validation_data=val_ds,
         callbacks=[NanCallback()],
-        epochs=1000,
+        epochs=10,
         batch_size=128
     )
 import tensorflow as tf
