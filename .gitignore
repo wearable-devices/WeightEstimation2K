@@ -8,3 +8,7 @@ logs/
 UserIDmodels/model_trial_2 (1).keras
 
 MODELS/initial_pre_trained_model.keras
+
+MODELS/initial_pre_trained_model_s2.keras
+
+MODELS/initial_pre_trained_models3.keras

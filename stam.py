@@ -37,8 +37,8 @@ file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted_old"#'/home/wld-a
 person_dict = get_weight_file_from_dir(file_dir)
 person_zero_dict = {person_name: weight_dict[0] for person_name, weight_dict in person_dict.items() if 0 in weight_dict.keys()}
 
-persons = [#'Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
-               'Leeor',
+persons = ['Alisa',# 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
+              # 'Leeor',
                'Daniel',
               # 'Liav',
               #  'Foad',
@@ -60,12 +60,23 @@ persons = [#'Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
 person_to_idx = {name: idx for idx, name in enumerate(persons)}
 num_persons = len(person_to_idx) if persons == 'all' else len(persons)
 
-model_snc_path = r"C:\Users\sofia.a\PycharmProjects\Production\WeightEstimation2K\MODELS\initial_pre_trained_model.keras"
-model_1 = keras.models.load_model(model_snc_path, #custom_objects=custom_objects,
+model_snc_path_2 = r"C:\Users\sofia.a\PycharmProjects\Production\WeightEstimation2K\MODELS\initial_pre_trained_model_s2.keras"
+model_snc_path_3 = r"C:\Users\sofia.a\PycharmProjects\Production\WeightEstimation2K\MODELS\initial_pre_trained_models3.keras"
+model_2 = keras.models.load_model(model_snc_path_2, #custom_objects=custom_objects,
                                                #compile=True,
                                                safe_mode=False)
-model = one_sensor_model_fusion(model_1, model_1, model_1,
+model_3 = keras.models.load_model(model_snc_path_3, #custom_objects=custom_objects,
+                                               #compile=True,
+                                               safe_mode=False)
+model_majority = one_sensor_model_fusion(model_2, model_2, model_2,
                              fusion_type='majority_vote',
+                             window_size_snc=snc_window_size,
+                             trainable=True,
+                             optimizer='Adam', learning_rate=0.0016,compile=True,
+                             )
+
+model_average = one_sensor_model_fusion(model_2, model_2, model_2,
+                             fusion_type='average',
                              window_size_snc=snc_window_size,
                              trainable=False,
                              optimizer='Adam', learning_rate=0.0016,compile=True,
@@ -79,11 +90,19 @@ val_ds = create_data_for_model(person_dict, snc_window_size, batch_size, labels_
                           data_mode='Test', contacts=['M'])
 
 
-model.fit(
-        train_ds,
+model_majority.fit(
+        val_ds,
         validation_data=val_ds,
         callbacks=[NanCallback()],
-        epochs=10,
+        epochs=5,
+        batch_size=128
+    )
+
+model_average.evaluate(
+        val_ds,
+        # validation_data=val_ds,
+        # callbacks=[NanCallback()],
+        # epochs=1,
         batch_size=128
     )
 import tensorflow as tf
