@@ -12,11 +12,14 @@ from custom.for_debug import check_for_nans, ValueMonitorCallback, \
 from pathlib import Path
 from datetime import datetime
 from custom.losses import ProtoLoss
-from custom.callbacks import FeatureSpacePlotCallback, NanCallback
+from custom.callbacks import FeatureSpacePlotCallback, NanCallback,SaveKerasModelCallback
 import os
 from db_generators.generators import create_data_for_userId_model
 
 from utils.get_data import get_weight_file_from_dir
+import optuna
+from optuna.trial import TrialState
+from optuna_dashboard import save_plotly_graph_object
 
 def create_person_zeroid_model(sensor_num=2, window_size_snc=306,
                                              J_snc=5, Q_snc=(2, 1),
@@ -57,16 +60,11 @@ def create_person_zeroid_model(sensor_num=2, window_size_snc=306,
 
     all_sensors = [scattered_snc1,scattered_snc2,scattered_snc3]
     x = all_sensors[sensor_num-1]
-    # Add a small epsilon to prevent division by zero in subsequent operations
-    # epsilon = 1e-7
-    # x = x+epsilon
-
-    # Apply Time attention
 
     x = K.mean(x, axis=1)
 
-    # x = keras.layers.Dense(units, activation=dense_activation, name = 'dense_1')(x)
-    # x = keras.layers.Dense(units//2, activation=dense_activation, name='person_id')(x)
+    x = keras.layers.Dense(units, activation=dense_activation, name = 'dense_1')(x)
+    x = keras.layers.Dense(units//2, activation=dense_activation, name='person_id')(x)
     # out = keras.layers.Dense(embd_dim, activation='softmax', name = 'person_distr')(x)
     out = keras.layers.Dense(embd_dim, activation=dense_activation, name = 'person_id_final')(x)
 
@@ -98,7 +96,66 @@ class CustomTensorBoard(TensorBoard):
         # Convert non-scalar values to scalars if needed
         logs = {k: v.item() if hasattr(v, 'item') else v for k, v in logs.items()}
         super().on_epoch_end(epoch, logs)
+def objective(trial):
+    # Clear clutter from previous session graphs
+    keras.backend.clear_session()
 
+    snc_window_size_hp = 1548#trial.suggest_int("snc_window_size", 162, 1800, step=18)
+    model_parameters_dict = {'sensor_num': 2,
+                             'window_size_snc': snc_window_size_hp,
+                            'undersampling':2,#4.8
+                            'units':14,#trial.suggest_int('units', 8, 25),
+                             'dense_activation': 'relu',
+                             'scattering_type':'SEMG',
+                            'embd_dim': 9,#trial.suggest_int('embd_dim', 5, 15),
+
+                            'number_of_persons':num_persons,
+                             'optimizer':'Adam', 'learning_rate':0.0016,
+                             'weight_decay':0.0,  'compile':True}
+
+    # pruning_callback = optuna.integration.tensorboard.TensorBoardCallback(trial)
+    trial_dir = trials_dir / f"trial_{trial.number}"  # Specific trial
+    trial_dir.mkdir(exist_ok=True)
+    trial_dir = str(trial_dir)
+    trial.set_user_attr("directory", trial_dir)  # Attribute can be seen in optuna-dashboard
+    model_name = f"model_trial_{trial.number}"
+
+    model = create_person_zeroid_model(**model_parameters_dict)
+    model.summary()
+
+    train_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size_hp, batch_size,
+                                            epoch_len, persons,
+                                            data_mode='Train', contacts=['M'])
+    val_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size_hp, batch_size,
+                                          epoch_len, persons,
+                                          data_mode='Test', contacts=['M'])
+    callbacks = [TensorBoard(log_dir=os.path.join(trial_dir, 'tensorboard')),
+                 SaveKerasModelCallback(trial_dir, f"model_trial_{trial.number}", phase='train'),
+                 NanCallback(),  # ValueMonitorCallback(monitor_layers=['person_id', 'person_id_final']),
+                 FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='person_id_final',
+                                          data_mode='Test',
+                                          proj='tsne',
+                                          metric="euclidean", picture_name_prefix='test_dict',
+                                          used_persons=persons, task='user_id',
+                                          num_of_components=2, samples_per_label_per_person=15, phase='Train')
+                 ]
+
+    # Train the model
+    model.fit(
+        train_ds,
+        validation_data=val_ds,
+        callbacks=callbacks,
+        epochs=50,
+        batch_size=batch_size
+    )
+
+    metrics_values = model.evaluate(
+        val_ds,
+        return_dict=True
+    )
+
+    val_loss = metrics_values['loss']
+    return val_loss
 
 def logging_dirs():
     package_directory = Path(__file__).parent
@@ -107,24 +164,26 @@ def logging_dirs():
     logs_root_dir.mkdir(exist_ok=True)
     log_dir = package_directory / 'logs' / datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
     log_dir.mkdir(exist_ok=True)
+    trials_dir = log_dir / "trials"
+    trials_dir.mkdir(exist_ok=True)
 
-    return logs_root_dir, log_dir
+    return logs_root_dir, log_dir, trials_dir
 
 if __name__ == "__main__":
-    logs_root_dir, log_dir = logging_dirs()
+    logs_root_dir, log_dir, trials_dir = logging_dirs()
     file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted"#'/home/wld-algo-6/DataCollection/Data'
     person_dict = get_weight_file_from_dir(file_dir)
     person_zero_dict = {person_name: weight_dict[0] for person_name, weight_dict in person_dict.items() if 0 in weight_dict.keys()}
 
-    snc_window_size = 512
+    # snc_window_size = 512
     # Preprocess data
     persons = ['Alisa', 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
                'Leeor',
                'Daniel',
-               #'Liav'PROBLEM
-               # 'Foad',
-               #'Molham' #PROBLEM
-               'Ofek'
+               'Liav',
+                'Foad',
+               'Molham' ,
+               'Ofek', 'Shai'
                ]#,'Guy']
 
     # Create person to index mapping
@@ -133,12 +192,14 @@ if __name__ == "__main__":
 
     epoch_len = 30  # None
     batch_size = 512
-    train_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
-                                            epoch_len, persons,
-                                            data_mode='Train', contacts=['M'])
-    val_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
-                                          epoch_len, persons,
-                                          data_mode='Test', contacts=['M'])
+    # train_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
+    #                                         epoch_len, persons,
+    #                                         data_mode='Train', contacts=['M'])
+    # val_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size, batch_size,
+    #                                       epoch_len, persons,
+    #                                       data_mode='Test', contacts=['M'])
+
+
 
 
 
@@ -148,35 +209,56 @@ if __name__ == "__main__":
     # test_labels_onehot = keras.utils.to_categorical(test_data['labels'], num_persons)
 
     # Create and train model
-    model = create_person_zeroid_model(
-                        sensor_num=2,  # Use sensor 2 data
-                        # scattering_type='SEMG',
-                        units=10,
-                        number_of_persons=num_persons,
-                        window_size_snc=snc_window_size, embd_dim=4,
-                        dense_activation='relu',
-                        learning_rate=0.0016,
-                        # Match your input size
-    )
+    # model = create_person_zeroid_model(
+    #                     sensor_num=2,  # Use sensor 2 data
+    #                     # scattering_type='SEMG',
+    #                     units=10,
+    #                     number_of_persons=num_persons,
+    #                     window_size_snc=snc_window_size, embd_dim=4,
+    #                     dense_activation='relu',
+    #                     learning_rate=0.0016,
+    #                     # Match your input size
+    # )
+    #
+    # callbacks = [TensorBoard(log_dir=os.path.join(log_dir, 'tensorboard')),
+    #              #LayerOutputMonitor([ 'scattering_time_domain','person_id']),
+    #              NanCallback(),#ValueMonitorCallback(monitor_layers=['person_id', 'person_id_final']),
+    #              FeatureSpacePlotCallback(person_dict, log_dir, layer_name='person_id_final', data_mode='Test',
+    #                                       proj='tsne',
+    #                                       metric="euclidean", picture_name_prefix='test_dict',
+    #                                       used_persons=persons,task='user_id',
+    #                                       num_of_components=2, samples_per_label_per_person=15, phase='Train')
+    # ]
+    #
+    # # Train the model
+    # history = model.fit(
+    #     train_ds,
+    #     validation_data=val_ds,
+    #     callbacks=callbacks,
+    #     epochs=30,
+    #     batch_size=batch_size
+    # )
 
-    callbacks = [TensorBoard(log_dir=os.path.join(log_dir, 'tensorboard')),
-                 #LayerOutputMonitor([ 'scattering_time_domain','person_id']),
-                 NanCallback(),#ValueMonitorCallback(monitor_layers=['person_id', 'person_id_final']),
-                 FeatureSpacePlotCallback(person_dict, log_dir, layer_name='person_id_final', data_mode='Test',
-                                          proj='tsne',
-                                          metric="euclidean", picture_name_prefix='test_dict',
-                                          used_persons=persons,task='user_id',
-                                          num_of_components=2, samples_per_label_per_person=15, phase='Train')
-    ]
+    N_TRIALS = 100
+    # Create optuna study
+    storage_name = os.path.join(f"sqlite:///{logs_root_dir.resolve()}", "wld.db")
+    study_name = "attention_weight_classifier_snc" + datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
+    study = optuna.create_study(directions=['minimize'], study_name=study_name,
+                                sampler=optuna.samplers.NSGAIISampler(),
+                                storage=storage_name, load_if_exists=True)
+    study.optimize(objective, n_trials=N_TRIALS)
 
-    # Train the model
-    history = model.fit(
-        train_ds,
-        validation_data=val_ds,
-        callbacks=callbacks,
-        epochs=30,
-        batch_size=128
-    )
+    # Info from the study
+    pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
+    complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
 
-    ttt=1
-    # CategoricalCrossentropy
+    # https://medium.com/optuna/announcing-optuna-3-4-0087644c92fa
+    figure = optuna.visualization.plot_optimization_history(study)
+    save_plotly_graph_object(study, figure)
+
+    # Save the best epoch for each trial.
+    # In multi-objective there is no 'best' trial, we have a tradeoff
+    print("Study statistics: ")
+    print(" Number of finished trials: ", len(study.trials))
+    print(" Number of pruned trials: ", len(pruned_trials))
+    print(" Number of complete trials: ", len(complete_trials))

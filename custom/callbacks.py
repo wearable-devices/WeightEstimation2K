@@ -239,6 +239,7 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
                 6: 'brown',
                 8: 'black',
                 9: 'pink',
+                10: 'dimgray'
             }
 
             # Create the plot
@@ -255,7 +256,7 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
                             mode='markers',
                             marker=dict(
                                 size=8,
-                                color=color_map[user_num],
+                                color=color_map[user_num%11],
                                 # symbol=marker_map[person],
                                 opacity=0.8
                             ),
