@@ -708,3 +708,33 @@ class DistanceLayer(keras.layers.Layer):
         # Calculate distances using broadcasting
         m_distances = -tf.norm(inputs[:, tf.newaxis, :] - self.fixed_points, axis=-1)
         return m_distances
+
+@keras.saving.register_keras_serializable(package='majority_vote', name='MajorityVote')
+class MajorityVote(keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def call(self, inputs):
+        # Expecting a list of 3 inputs, each shape (batch_size,)
+        input1, input2, input3 = inputs
+
+        # Stack inputs to shape (batch_size, 3)
+        stacked = tf.stack([input1, input2, input3], axis=1)
+
+        # For each sample, sort values
+        sorted_vals = tf.sort(stacked, axis=1)
+
+        # Calculate differences between adjacent values
+        diff1 = tf.abs(sorted_vals[:, 1] - sorted_vals[:, 0])
+        diff2 = tf.abs(sorted_vals[:, 2] - sorted_vals[:, 1])
+
+        # Choose which two values to average based on smallest difference
+        result = tf.where(
+            diff1 <= diff2,
+            # If first two values are closer, average them
+            (sorted_vals[:, 0] + sorted_vals[:, 1]) / 2.0,
+            # If last two values are closer, average them
+            (sorted_vals[:, 1] + sorted_vals[:, 2]) / 2.0
+        )
+
+        return result

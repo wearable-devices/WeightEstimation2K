@@ -48,7 +48,7 @@ def objective(trial):
     keras.backend.clear_session()
 
     # Define the search space and sample parameter values
-    snc_window_size_hp = trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
+    snc_window_size_hp = 1062#trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
     addition_weight_hp = 0#trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
     epoch_num =  40
     epoch_len = 5  # None
@@ -164,7 +164,7 @@ def objective(trial):
 
     # persons_val_loss_dict = {person: 0 for person in persons_dirs}
     # model = create_attention_weight_distr_estimation_model(**attention_distr_snc_model_parameters_dict)
-    model = one_sensors_weight_estimation_proto_model(sensor_num=1, **average_sensors_weight_estimation_model_dict)
+    model = one_sensors_weight_estimation_proto_model(sensor_num=SENSOR_NUM, **average_sensors_weight_estimation_model_dict)
 
     # model = create_rms_weight_estimation_model(**attention_snc_model_parameters_dict)
     model.summary()
@@ -352,6 +352,7 @@ def logging_dirs():
 
 
 if __name__ == "__main__":
+    SENSOR_NUM = 3
     persons_for_train_initial_model = ['Avihoo', 'Aviner', 'Shai', #'HishamCleaned',
                                        'Alisa','Molham']
     persons_for_test = [ 'Leeor',
@@ -369,6 +370,17 @@ if __name__ == "__main__":
     person_dict = get_weight_file_from_dir(file_dir)
 
     logs_root_dir, log_dir, trials_dir = logging_dirs()
+
+    file_path = str(trials_dir) + 'general_info.txt'
+
+    # Write information to the file
+    with open(file_path, "a") as file:
+        file.write(f"sensor num {SENSOR_NUM}\n")
+        file.write("\n")
+        # file.write(f'max val loss {max([metrics['mse'] for person,metrics in personal_metrics_dict.items()])}')
+        # file.write("\n")
+        file.write("\n")
+        file.write("\n")
 
     # Create optuna study
     storage_name = os.path.join(f"sqlite:///{logs_root_dir.resolve()}", "wld.db")
@@ -392,3 +404,5 @@ if __name__ == "__main__":
     print(" Number of finished trials: ", len(study.trials))
     print(" Number of pruned trials: ", len(pruned_trials))
     print(" Number of complete trials: ", len(complete_trials))
+
+
