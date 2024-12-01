@@ -17,7 +17,7 @@ from custom.callbacks import *
 # from db_generators.create_person_dict import *
 import keras
 from keras.callbacks import ModelCheckpoint
-
+from models_dir.model_fusion import one_sensor_model_fusion
 
 def cleanup_after_trial(callbacks):
     for callback in callbacks:
@@ -48,7 +48,7 @@ def objective(trial):
     keras.backend.clear_session()
 
     # Define the search space and sample parameter values
-    snc_window_size_hp = 1062#trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
+    snc_window_size_hp = trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
     addition_weight_hp = 0#trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
     epoch_num =  40
     epoch_len = 5  # None
@@ -139,7 +139,7 @@ def objective(trial):
                                                     'scattering_max_order': 1,
                                                     'units': trial.suggest_int('units', 5, 15),
                                                     'dense_activation': trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
-                                                    'use_attention': trial.suggest_categorical('use_attention', [True, False ]),
+                                                    'use_attention': True,# trial.suggest_categorical('use_attention', [True, False ]),
                                                     'attention_layers_for_one_sensor': 1,
                                                     'use_time_ordering': False,
                                                     'scattering_type': 'SEMG',#trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
@@ -147,7 +147,7 @@ def objective(trial):
                                                     'optimizer': 'Adam', 'learning_rate': 0.0016,
                                                     'weight_decay': 0.0, 'max_weight': 2+addition_weight_hp, 'compile': True,
                                                     'loss': 'Huber',# trial.suggest_categorical('loss', ['Huber', 'mse'])
-                                                    'loss_balance': trial.suggest_float('loss_balance', 0.0, 1, step=0.1),
+                                                    # 'loss_balance': trial.suggest_float('loss_balance', 0.0, 1, step=0.1),
                                                      }
 
     # pruning_callback = optuna.integration.tensorboard.TensorBoardCallback(trial)
@@ -164,7 +164,19 @@ def objective(trial):
 
     # persons_val_loss_dict = {person: 0 for person in persons_dirs}
     # model = create_attention_weight_distr_estimation_model(**attention_distr_snc_model_parameters_dict)
-    model = one_sensors_weight_estimation_proto_model(sensor_num=SENSOR_NUM, **average_sensors_weight_estimation_model_dict)
+    model_sensor_1 = one_sensors_weight_estimation_proto_model(sensor_num=1, **average_sensors_weight_estimation_model_dict)
+    model_sensor_2 = one_sensors_weight_estimation_proto_model(sensor_num=2,
+                                                               **average_sensors_weight_estimation_model_dict)
+    model_sensor_3 = one_sensors_weight_estimation_proto_model(sensor_num=3,
+                                                               **average_sensors_weight_estimation_model_dict)
+    model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
+                             fusion_type='majority_vote',
+                             window_size_snc=snc_window_size_hp,
+                             trainable=True,
+                             optimizer=average_sensors_weight_estimation_model_dict['optimizer'],
+                                    learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
+                            compile=True
+                             )
 
     # model = create_rms_weight_estimation_model(**attention_snc_model_parameters_dict)
     model.summary()
@@ -238,9 +250,9 @@ def objective(trial):
         callbacks = [NanCallback(),
             TensorBoard(log_dir=os.path.join(trial_dir, 'tensorboard')),
             SaveKerasModelCallback(trial_dir, f"model_trial_{trial.number}"),
-            FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='dense_1', data_mode = 'Test', proj='pca',
-                                     metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
-                                     num_of_components=3, samples_per_label_per_person=10, phase='Train'),
+            # FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='dense_1', data_mode = 'Test', proj='pca',
+            #                          metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
+            #                          num_of_components=3, samples_per_label_per_person=10, phase='Train'),
             # FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='dense_1_for_sensor_1', data_mode='Test', proj='pca',
             #                          metric="euclidean", picture_name=person + 'test_dict', used_persons=[person],
             #                          num_of_components=3, samples_per_label_per_person=10, phase='Train'),
@@ -283,11 +295,16 @@ def objective(trial):
             return_dict=True
         )
         try:
-            person_mae = metrics_values['mae']
-            person_mse = metrics_values['mse']
+            try:
+                person_mae = metrics_values['mae']
+                person_mse = metrics_values['mse']
+            except:
+                person_mae = metrics_values['multiply_mae']
+                person_mse = metrics_values['multiply_mse']
         except:
-            person_mae = metrics_values['multiply_mae']
-            person_mse = metrics_values['multiply_mse']
+            person_mae = metrics_values['majority_vote_mae']
+            person_mse = 1000
+
         personal_metrics_dict[person] = {'mae':person_mae, 'mse': person_mse}
 
     max_val_mae = max([metrics['mae'] for person,metrics in personal_metrics_dict.items()])

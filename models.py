@@ -835,7 +835,8 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
     # x = keras.layers.Flatten()(x)
 
 
-    x = keras.layers.Dense(units, activation=dense_activation, name='dense_1')(x)
+    # x = keras.layers.Dense(units, activation=dense_activation, name='dense_1')(x)
+    x = keras.layers.Dense(units, activation=dense_activation)(x)
 
 
 

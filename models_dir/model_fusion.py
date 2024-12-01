@@ -3,13 +3,14 @@ import keras.ops as K
 # from pandas.conftest import axis_frame
 from custom.layers import MajorityVote
 import tensorflow as tf
-from models import get_optimizer
+from models import get_optimizer, get_loss
 
 def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
                              fusion_type='average',
                              window_size_snc=234,
                              trainable=False,
                              optimizer='Adam', learning_rate=0.0016,
+                            loss = 'mse',
                             compile=False
                              ):
     '''fusion_type could be 'average', 'majority_vote' '''
@@ -44,10 +45,11 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
                            name='snc_fusion_model')
 
     opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate)
+    loss = get_loss(loss)
     if compile:
         model.compile(
             optimizer=opt,
-            loss=['mse', 'mse', 'mse', 'mse'
+            loss=[loss, loss, loss, loss
                  ],
             metrics=['mae','mae','mae','mae'],
 

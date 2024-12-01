@@ -350,10 +350,10 @@ class OutputPlotCallback(keras.callbacks.Callback):
         '''if model supposed to have labeled input it will be taken from self.persons_dict_labeled'''
 
     def on_train_end(self, logs=None):
-        try:
-            self.calc_feature_space()
-        except:
-            print('Could not calc  output Callback')
+        # try:
+        self.calc_feature_space()
+        # except:
+        #     print('Could not calc  output Callback')
         try:
             self.plot_feature_space_optuna()
             # print(self.personal_accuracy)
@@ -383,7 +383,10 @@ class OutputPlotCallback(keras.callbacks.Callback):
 
     def calc_feature_space(self):
         """this method  """
-        window_size = self.model.input['snc_1'].shape[-1]
+        try:
+            window_size = self.model.input['snc_1'].shape[-1]
+        except:
+            window_size = self.model.input[0].shape[-1]
 
         if len(self.model.inputs) == 7:  # model has a labeled input
             samples_per_weight = int(self.model.inputs[3].shape[
