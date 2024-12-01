@@ -287,7 +287,7 @@ def create_data_for_model(person_dict, snc_window_size, batch_size, labels_to_ba
         person_names=used_persons,
         contacts=contacts
     )
-
+    train_generator.__getitem__(0)
     train_ds = convert_generator_to_dataset(train_generator)
     return train_ds
 

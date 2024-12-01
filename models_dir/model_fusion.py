@@ -12,7 +12,7 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
                              optimizer='Adam', learning_rate=0.0016,
                             compile=False
                              ):
-    '''fusion_type could be 'average', 'majority_vote' '''
+    '''fusion_type could be 'average', 'majority_vote', 'attention'  '''
     snc_model_1._name = 'snc_model_1'
     snc_model_2._name = 'snc_model_2'
     snc_model_3._name = 'snc_model_3'
@@ -34,6 +34,10 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
         fused_out = K.expand_dims(K.mean(K.concatenate([snc_output_1, snc_output_2, snc_output_3], axis=-1), axis=-1),axis=1)
     elif fusion_type == 'majority_vote':
         fused_out = MajorityVote()([snc_output_1, snc_output_2, snc_output_3])
+    elif fusion_type == 'attention':
+        layer_for_fusion_1 = snc_model_1([input_layer_snc1, input_layer_snc2, input_layer_snc3])[1]
+        layer_for_fusion_2 = snc_model_2([input_layer_snc1, input_layer_snc2, input_layer_snc3])[1]
+        layer_for_fusion_3 = snc_model_3([input_layer_snc1, input_layer_snc2, input_layer_snc3])[1]
 
     # total_out = K.concat([K.expand_dims(snc_output_1,axis=1),K.expand_dims(snc_output_2, axis=1),
     #                        K.expand_dims(snc_output_3, axis=1)], axis=1)

@@ -4,6 +4,7 @@ import tensorflow as tf
 from itertools import combinations
 import keras
 import keras.ops as K
+import numpy as np
 def get_weight_files(directory):
     weight_data = []
 
@@ -53,16 +54,28 @@ def frame_all_snc(snc_data, frame_length=100, frame_step=18):
     return framed_snc_data
 
 
-def batch_pearson_correlation(x, y):
-    # x, y shape: (batch_size, 100)
+def batch_pearson_correlation(x, y, shift=0):
+    '''x, y shape: (batch_size, 100)
+    y will be shifted right'''
+    if shift == 0:
+        y_actual = y
+        x_actual = x
+    else:
+        if shift > 0:
+            y_actual = y[:,shift:]
+            x_actual = x[:,:-shift]
+        if shift < 0:
+            x_actual = x[:, -shift:]
+            y_actual = y[:, :shift]
+
 
     # Calculate means for each sample
-    x_mean = tf.reduce_mean(x, axis=1, keepdims=True)  # shape: (batch_size, 1)
-    y_mean = tf.reduce_mean(y, axis=1, keepdims=True)  # shape: (batch_size, 1)
+    x_mean = tf.reduce_mean(x_actual, axis=1, keepdims=True)  # shape: (batch_size, 1)
+    y_mean = tf.reduce_mean(y_actual, axis=1, keepdims=True)  # shape: (batch_size, 1)
 
     # Center the variables
-    x_centered = x - x_mean  # shape: (batch_size, 100)
-    y_centered = y - y_mean  # shape: (batch_size, 100)
+    x_centered = x_actual - x_mean  # shape: (batch_size, 100)
+    y_centered = y_actual - y_mean  # shape: (batch_size, 100)
 
     # Calculate numerator (covariance)
     numerator = tf.reduce_sum(x_centered * y_centered, axis=1)  # shape: (batch_size,)
@@ -83,15 +96,17 @@ def sensor_pearson_correlation(framed_signal_dict):
         corr= {}
         for i, j in combinations(range(3), 2):
             corr[f'{i+1}_{j+1}'] = batch_pearson_correlation(dict[f'framed_snc{i+1}'],
-                                                             dict[f'framed_snc{i+1}'])
+                                                             dict[f'framed_snc{j+1}'], shift=0)
         min_corr = K.min(K.min([corr['1_2'], corr['1_3'], corr['2_3']], axis=-1)).numpy()
+        max_corr = K.max(K.max([corr['1_2'], corr['1_3'], corr['2_3']], axis=-1)).numpy()
         if min_corr < global_min_corr:
             global_min_corr = min_corr
         worst_dict = dict
         corr_data.append({
             'file': dict['file'],
             'corr': corr,
-            'min_corr': min_corr
+            'min_corr': min_corr,
+            'max_corr': max_corr
         })
     return corr_data, global_min_corr, worst_dict
 
@@ -100,7 +115,7 @@ if __name__ == "__main__":
     file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted (1)\Sorted"
     snc_data = get_weight_files(file_dir)
 
-    frame_len = 50
+    frame_len = 100
     framed_snc_data = frame_all_snc(snc_data, frame_length=frame_len, frame_step=18)
     corr_data, global_min_corr, worst_dict = sensor_pearson_correlation(framed_snc_data)
 
