@@ -864,20 +864,17 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
 
 
 def one_sensor_weight_estimation_with_zeroidhint_model(sensor_num=2, window_size_snc=306,
-                                                       hint_model_path='',
-                                             undersampling=4.8,
+                                                       hint_model='',
+                                             undersampling=3,
                                              scattering_max_order=1,
                                              units=10, dense_activation='relu', use_attention=True,
                                              attention_layers_for_one_sensor=1,
                                              use_time_ordering=False,
-
-
                                              final_activation='sigmoid',
 
-                                             # apply_noise=True, stddev=0.1,
                                              optimizer='Adam', learning_rate=0.0016,
-                                             weight_decay=0.0, max_weight=3.0, compile=True,
-                                               loss = 'mse',
+                                             weight_decay=0.0, max_weight=2, compile=True,
+                                               loss = 'Huber',
                                              loss_balance = 0.5
                                              ):
     '''sensor_fusion could be 'early, attention or mean'''
@@ -886,9 +883,9 @@ def one_sensor_weight_estimation_with_zeroidhint_model(sensor_num=2, window_size
     input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
     input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
 
-    hint_model = keras.models.load_model(hint_model_path, #custom_objects=custom_objects,
-                                    compile=False,
-                                    safe_mode=False)
+    custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain}
+
+
     user_id = hint_model([input_layer_snc1, input_layer_snc2, input_layer_snc3]) # (batch_size, embd_dim)
 
     scattering_layer = SEMGScatteringTransform(undersampling=undersampling)
@@ -929,10 +926,11 @@ def one_sensor_weight_estimation_with_zeroidhint_model(sensor_num=2, window_size
     y = keras.layers.Dense(units,activation=dense_activation, name='dense_2')(user_id)
 
     # x = x-user_id
-    mult = tf.matmul(x,y)
+    # mult = tf.matmul(x,y)
+    conc = K.concatenate([x,y], axis=-1)
 
-    # out = [(max_weight) * keras.layers.Dense(1, activation=final_activation, name='final_dense_1')(x), x]
-    out = [(max_weight) * mult, x]
+    out = [(max_weight) * keras.layers.Dense(1, activation=final_activation, name='final_dense_1')(conc), x]
+    # out = [(max_weight) * mult, x]
 
     inputs = {'snc_1': input_layer_snc1, 'snc_2': input_layer_snc2, 'snc_3': input_layer_snc3}
     model = keras.Model(inputs=inputs,
@@ -943,12 +941,8 @@ def one_sensor_weight_estimation_with_zeroidhint_model(sensor_num=2, window_size
         model_loss = get_loss(loss)
 
         model.compile(loss= [model_loss,ProtoLoss(number_of_persons=4, proto_meaning='weight')],
-                      loss_weights={
-                          'weight_output': loss_balance,  # Set weight to 0 to ignore during training
-                          'gaussian_output': 1 - loss_balance
-                      },
-                      metrics=
-                          [['mae', 'mse'], None],
+                      loss_weights=[ loss_balance, 1 - loss_balance],
+                      metrics=[['mae', 'mse'], None],
                       optimizer=opt,
                       run_eagerly=True)
 
