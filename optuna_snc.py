@@ -138,12 +138,13 @@ def objective(trial):
                                                     'undersampling': trial.suggest_float('undersampling', 2, 4, step=0.2),#4.8,
                                                     'scattering_max_order': 1,
                                                     'units': trial.suggest_int('units', 5, 15),
-                                                    'dense_activation': trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
+                                                    'dense_activation': 'relu',#trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
                                                     'use_attention': True,# trial.suggest_categorical('use_attention', [True, False ]),
+                                                    'key_dim_for_time_attention':trial.suggest_int('key_dim_for_time_attention', 4, 12),#5,
                                                     'attention_layers_for_one_sensor': 1,
                                                     'use_time_ordering': False,
                                                     'scattering_type': 'SEMG',#trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
-                                                    'final_activation': trial.suggest_categorical('final_activation',['sigmoid', 'tanh']),
+                                                    # 'final_activation': trial.suggest_categorical('final_activation',['sigmoid', 'tanh']),
                                                     'optimizer': 'Adam', 'learning_rate': 0.0016,
                                                     'weight_decay': 0.0, 'max_weight': 2+addition_weight_hp, 'compile': True,
                                                     'loss': 'Huber',# trial.suggest_categorical('loss', ['Huber', 'mse'])
@@ -169,13 +170,15 @@ def objective(trial):
                                                                **average_sensors_weight_estimation_model_dict)
     model_sensor_3 = one_sensors_weight_estimation_proto_model(sensor_num=3,
                                                                **average_sensors_weight_estimation_model_dict)
+
+    fusion_type_tp = trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ]),
     model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
-                             fusion_type='majority_vote',
+                             fusion_type=fusion_type_tp,
                              window_size_snc=snc_window_size_hp,
                              trainable=True,
                              optimizer=average_sensors_weight_estimation_model_dict['optimizer'],
                                     learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
-                            compile=True
+                             compile=True
                              )
 
     # model = create_rms_weight_estimation_model(**attention_snc_model_parameters_dict)

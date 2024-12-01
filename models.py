@@ -762,6 +762,7 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
                                              undersampling=4.8,
                                              scattering_max_order=1,
                                              units=10, dense_activation='relu', use_attention=True,
+                                             key_dim_for_time_attention=5,
                                              attention_layers_for_one_sensor=1,
                                              use_time_ordering=False,
                                              # use_sensor_attention=False,
@@ -824,7 +825,7 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
 
     # Apply Time attention
     if use_attention:
-        x = keras.layers.MultiHeadAttention(num_heads=3,key_dim=5)(query=x,key = x,value = x)
+        x = keras.layers.MultiHeadAttention(num_heads=3,key_dim=key_dim_for_time_attention)(query=x,key = x,value = x)
     x = mean_time_sensor_image(x)
     # x_mean = K.mean(x, axis=1)
     # x_min = K.min(x, axis=1)

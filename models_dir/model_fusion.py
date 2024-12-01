@@ -9,12 +9,18 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
                              fusion_type='average',
                              window_size_snc=234,
                              use_sensor_ordering=True,num_sensor_attention_heads=2,
+                             max_weight=2,
                              trainable=False,
                              optimizer='Adam', learning_rate=0.0016,
                             loss = 'mse',
                             compile=False
                              ):
     '''fusion_type could be 'average', 'majority_vote', 'attention'  '''
+
+    opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate)
+    loss = get_loss(loss)
+    first_loss = loss
+
     snc_model_1._name = 'snc_model_1'
     snc_model_2._name = 'snc_model_2'
     snc_model_3._name = 'snc_model_3'
@@ -56,20 +62,26 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
         x2 = keras.layers.Lambda(lambda x: x[:, 1, :], name='sensor_2_attended')(attended)
         x3 = keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended')(attended)
         mean = K.mean(attended, axis=1)
-    # total_out = K.concat([K.expand_dims(snc_output_1,axis=1),K.expand_dims(snc_output_2, axis=1),
-    #                        K.expand_dims(snc_output_3, axis=1)], axis=1)
+
+        final_dense_layer = keras.layers.Dense(1, activation='sigmoid', name='final_dense')
+        snc_output_1 = max_weight * final_dense_layer(x1)
+        snc_output_2 = max_weight * final_dense_layer(x2)
+        snc_output_3 = max_weight * final_dense_layer(x3)
+
+        fused_out = max_weight * final_dense_layer(mean)
+        first_loss = None
+
 
     model = keras.Model(inputs=[input_layer_snc1, input_layer_snc2, input_layer_snc3],
                                 outputs=[fused_out, snc_output_1, snc_output_2, snc_output_3
                                          ],
                            name='snc_fusion_model')
 
-    opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate)
-    loss = get_loss(loss)
+
     if compile:
         model.compile(
             optimizer=opt,
-            loss=[loss, loss, loss, loss
+            loss=[first_loss, loss, loss, loss
                  ],
             metrics=['mae','mae','mae','mae'],
 
