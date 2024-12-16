@@ -21,14 +21,14 @@ import tensorflow.keras as tf_keras
 #
 #     return snc1, snc2, snc3
 
-def process_normal_csv(file_path):
+def process_normal_csv(file_path, multiplier=1):
     # Read the CSV file
     df = pd.read_csv(file_path)
 
     # Get the column and remove None values
-    snc_1 = df['Snc1'].dropna().values
-    snc_2 = df['Snc2'].dropna().values
-    snc_3 = df['Snc3'].dropna().values
+    snc_1 = multiplier * df['Snc1'].dropna().values
+    snc_2 =  multiplier * df['Snc2'].dropna().values
+    snc_3 =  multiplier * df['Snc3'].dropna().values
 
     return snc_1, snc_2, snc_3
 
@@ -53,7 +53,7 @@ def get_windowed_data_from_file(file_path, window_size_snc):
 
     return snc1_reshaped, snc2_reshaped, snc3_reshaped
 
-def get_weight_file_from_dir(file_dir):
+def get_weight_file_from_dir(file_dir, multiplier=1):
     """
        Recursively search and process weight measurement CSV files from a directory structure.
 
@@ -112,7 +112,7 @@ def get_weight_file_from_dir(file_dir):
                 # match_g = re.search(r'weight_(\d+)g_horizontsal', filename)
                 # if match_kg or match_g:
                 weight = label#float(match_kg.group(1)) if match_kg else float(match_g.group(1))/1000
-                snc1_data, snc2_data, snc3_data = process_normal_csv(file_path)
+                snc1_data, snc2_data, snc3_data = process_normal_csv(file_path, multiplier=multiplier)
 
                 if person not in persons_dict:
                     persons_dict[person] = {}
@@ -162,9 +162,9 @@ def mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_pe
                         snc_1_window = file_data['snc_1'][start:start + window_size]
                         snc_2_window = file_data['snc_2'][start:start + window_size]
                         snc_3_window = file_data['snc_3'][start:start + window_size]
-                        snc_1_window = tf.cast(snc_1_window, dtype=float) / 2 ** 24
-                        snc_2_window = tf.cast(snc_2_window, dtype=float) / 2 ** 24
-                        snc_3_window = tf.cast(snc_3_window, dtype=float) / 2 ** 24
+                        snc_1_window = tf.cast(snc_1_window, dtype=float)# / 2 ** 24
+                        snc_2_window = tf.cast(snc_2_window, dtype=float)# / 2 ** 24
+                        snc_3_window = tf.cast(snc_3_window, dtype=float)# / 2 ** 24
                         # Extract the window
                         snc1_batch.append(snc_1_window)
                         snc2_batch.append(snc_2_window)
@@ -192,13 +192,13 @@ def mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_pe
                         scattered_snc3 = tf.squeeze(scattered_snc3, axis=-1)
                         scattered_snc33 = tf.squeeze(scattered_snc33, axis=-1)
 
-                    # scattered_snc1_mean = tf.reduce_mean(scattered_snc1, axis=-1)
-                    # scattered_snc2_mean = tf.reduce_mean(scattered_snc2, axis=-1)
-                    # scattered_snc3_mean = tf.reduce_mean(scattered_snc3, axis=-1)
+                    scattered_snc1_mean = tf.reduce_mean(scattered_snc1, axis=-1)
+                    scattered_snc2_mean = tf.reduce_mean(scattered_snc2, axis=-1)
+                    scattered_snc3_mean = tf.reduce_mean(scattered_snc3, axis=-1)
 
-                    scattered_snc1_mean = tfp.stats.percentile(scattered_snc1, 50.0, axis=-1)
-                    scattered_snc2_mean = tfp.stats.percentile(scattered_snc2, 50.0, axis=-1)
-                    scattered_snc3_mean = tfp.stats.percentile(scattered_snc3, 50.0, axis=-1)
+                    # scattered_snc1_mean = tfp.stats.percentile(scattered_snc1, 50.0, axis=-1)
+                    # scattered_snc2_mean = tfp.stats.percentile(scattered_snc2, 50.0, axis=-1)
+                    # scattered_snc3_mean = tfp.stats.percentile(scattered_snc3, 50.0, axis=-1)
 
                     fused_sensors = tf.concat([scattered_snc1_mean, scattered_snc2_mean, scattered_snc3_mean], axis=-1)
                     # fused_sensors = tf.concat([scattered_snc2_mean], axis=-1)

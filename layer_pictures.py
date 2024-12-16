@@ -59,8 +59,8 @@ if __name__ == "__main__":
     #           scattered_snc11, scattered_snc22, scattered_snc33)
 
     scattered_snc1_mean =  tf.reduce_mean(scattered_snc1, axis=-1)
-    persons_dict = get_weight_file_from_dir('/home/wld-algo-6/DataCollection/Data')
-    output_dict = mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_person=25, scattering_type='SEMG')
+    persons_dict = get_weight_file_from_dir('/home/wld-algo-6/Data/Sorted', multiplier=1)#('/home/wld-algo-6/DataCollection/Data')
+    output_dict = mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_person=2, scattering_type='SEMG')
     proj_dict  = apply_projection_to_dict(output_dict, n_components=3, perplexity=10, random_state=42, proj='pca',
                              metric="euclidean")
 
