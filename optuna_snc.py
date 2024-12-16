@@ -48,7 +48,7 @@ def objective(trial):
     keras.backend.clear_session()
 
     # Define the search space and sample parameter values
-    snc_window_size_hp = trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
+    snc_window_size_hp = 648#trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
     addition_weight_hp = 0#trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
     epoch_num =  40
     epoch_len = 5  # None
@@ -135,13 +135,13 @@ def objective(trial):
 
     average_sensors_weight_estimation_model_dict = {'window_size_snc': snc_window_size_hp,
                                                     'J_snc': 7, 'Q_snc': (2, 1),
-                                                    'undersampling': trial.suggest_float('undersampling', 2, 4, step=0.2),#4.8,
+                                                    'undersampling': 3,#trial.suggest_float('undersampling', 2, 4, step=0.2),#4.8,
                                                     'scattering_max_order': 1,
-                                                    'units': trial.suggest_int('units', 5, 15),
-                                                    'dense_activation': 'relu',#trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
+                                                    'units': 9,#trial.suggest_int('units', 5, 15),
+                                                    'dense_activation':'tanh',# trial.suggest_categorical('dense_activation', ['tanh',  'relu', ]),
                                                     'use_attention': True,# trial.suggest_categorical('use_attention', [True, False ]),
-                                                    'key_dim_for_time_attention':trial.suggest_int('key_dim_for_time_attention', 4, 12),#5,
-                                                    'attention_layers_for_one_sensor': 1,
+                                                    'key_dim_for_time_attention':5,#trial.suggest_int('key_dim_for_time_attention', 4, 12),#5,
+                                                    'attention_layers_for_one_sensor': trial.suggest_int('key_dim_for_time_attention', 2, 3),
                                                     'use_time_ordering': False,
                                                     'scattering_type': 'SEMG',#trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
                                                     # 'final_activation': trial.suggest_categorical('final_activation',['sigmoid', 'tanh']),
@@ -171,7 +171,7 @@ def objective(trial):
     model_sensor_3 = one_sensors_weight_estimation_proto_model(sensor_num=3,
                                                                **average_sensors_weight_estimation_model_dict)
 
-    fusion_type_tp = trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ]),
+    fusion_type_tp = 'majority_vote'#trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ]),
     model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
                              fusion_type=fusion_type_tp,
                              window_size_snc=snc_window_size_hp,
@@ -305,8 +305,13 @@ def objective(trial):
                 person_mae = metrics_values['multiply_mae']
                 person_mse = metrics_values['multiply_mse']
         except:
-            person_mae = metrics_values['majority_vote_mae']
-            person_mse = 1000
+            try:
+                person_mae = metrics_values['majority_vote_mae']
+                person_mse = 1000
+            except:
+                person_mae = metrics_values['majority_vote_1_mae']
+                person_mse = 1000
+
 
         personal_metrics_dict[person] = {'mae':person_mae, 'mse': person_mse}
 
@@ -386,7 +391,7 @@ if __name__ == "__main__":
     persons_for_plot = persons_for_test
 
     # USE_PRETRAINED_MODEL=True
-    file_dir = '/home/wld-algo-6/DataCollection/Data'
+    file_dir = '/home/wld-algo-6/Data/Sorted'
     person_dict = get_weight_file_from_dir(file_dir)
 
     logs_root_dir, log_dir, trials_dir = logging_dirs()

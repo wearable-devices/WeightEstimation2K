@@ -12,7 +12,7 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
                              max_weight=2,
                              trainable=False,
                              optimizer='Adam', learning_rate=0.0016,
-                            loss = 'mse',
+                            loss = 'Huber',
                             compile=False
                              ):
     '''fusion_type could be 'average', 'majority_vote', 'attention'  '''
@@ -38,6 +38,7 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
     snc_output_2 = snc_model_2([input_layer_snc1, input_layer_snc2, input_layer_snc3])[0]
     snc_output_3 = snc_model_3([input_layer_snc1, input_layer_snc2, input_layer_snc3])[0]
 
+    fused_out = MajorityVote()([snc_output_1, snc_output_2, snc_output_3])
     if fusion_type == 'average':
         fused_out = K.expand_dims(K.mean(K.concatenate([snc_output_1, snc_output_2, snc_output_3], axis=-1), axis=-1),axis=1)
     elif fusion_type == 'majority_vote':

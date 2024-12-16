@@ -825,7 +825,8 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
 
     # Apply Time attention
     if use_attention:
-        x = keras.layers.MultiHeadAttention(num_heads=3,key_dim=key_dim_for_time_attention)(query=x,key = x,value = x)
+        for _ in range(attention_layers_for_one_sensor):
+            x = keras.layers.MultiHeadAttention(num_heads=3,key_dim=key_dim_for_time_attention)(query=x,key = x,value = x)
     x = mean_time_sensor_image(x)
     # x_mean = K.mean(x, axis=1)
     # x_min = K.min(x, axis=1)
@@ -852,7 +853,8 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
         opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
         model_loss = get_loss(loss)
 
-        model.compile(loss= [model_loss,ProtoLoss(number_of_persons=4, proto_meaning='weight')],
+        model.compile(loss= [model_loss,
+                             ProtoLoss(number_of_persons=4, proto_meaning='weight')],
                       loss_weights=[ loss_balance,  1 - loss_balance],
                       metrics=
                           [['mae', 'mse'], None],
