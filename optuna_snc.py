@@ -381,12 +381,12 @@ if __name__ == "__main__":
     persons_for_train_initial_model = ['Avihoo', 'Aviner', 'Shai', #'HishamCleaned',
                                        'Alisa','Molham']
     persons_for_test = [ 'Leeor',
-                        'Liav',
-                         'Daniel',
-                         'Foad',
-                        'Asher2', 'Lee',
-                   'Ofek',
-       'Tom', #'Guy'
+       #                  'Liav',
+       #                   'Daniel',
+       #                   'Foad',
+       #                  'Asher2', 'Lee',
+       #             'Ofek',
+       # 'Tom', #'Guy'
                         ]
     persons_for_plot = persons_for_test
 

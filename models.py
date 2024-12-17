@@ -767,7 +767,6 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
                                              use_time_ordering=False,
                                              # use_sensor_attention=False,
                                             scattering_type='old',
-
                                              final_activation='sigmoid',
 
                                              # apply_noise=True, stddev=0.1,
