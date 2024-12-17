@@ -72,7 +72,7 @@ if __name__ == "__main__":
         batch_size=6  # 6 tasks per batch
     )
     # task_generator.sample_task()
-    task_generator.generate_batch()
+    # task_generator.generate_batch()
     # Create and train MAML
     maml = MAML(
         model_fn=create_maml_model,
@@ -84,14 +84,15 @@ if __name__ == "__main__":
     train_maml(
         maml,
         task_generator,
-        num_epochs=15,
+        num_epochs=30,
         tasks_per_epoch=10,
         eval_interval=1
     )
 
     # Example of adapting to a new task
-    support_x, support_y, query_x, query_y = task_generator.sample_task()
-    adapted_params = maml.adapt_to_task(support_x, support_y)
+    support_snc1, support_snc2, support_snc3, support_labels, query_snc1, query_snc2, query_snc3, query_labels = task_generator.sample_task('Liav')
+    support_data = [support_snc1, support_snc2, support_snc3]
+    adapted_params = maml.adapt_to_task(support_data, support_labels)
 
     # Save original parameters
     original_params = [tf.identity(w) for w in maml.model.trainable_variables]
@@ -101,7 +102,8 @@ if __name__ == "__main__":
         w.assign(w_adapted)
 
     # Make predictions on query set
-    predictions = maml.model(query_x)
+    query_data = [query_snc1, query_snc2, query_snc3]
+    predictions = maml.model(query_data)
 
     # Restore original parameters
     for w, w_original in zip(maml.model.trainable_variables, original_params):
