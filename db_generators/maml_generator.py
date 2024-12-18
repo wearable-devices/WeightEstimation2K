@@ -4,6 +4,7 @@ from keras import layers
 import numpy as np
 from typing import List, Tuple, Iterator
 import random
+from db_generators.generators import create_data_for_model
 
 def sample_person_signal_windows(person_data, window_size, label, sample_num=5, person_name=''):
     """

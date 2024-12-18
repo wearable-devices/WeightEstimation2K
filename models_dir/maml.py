@@ -5,12 +5,13 @@ import numpy as np
 from custom.layers import *
 import keras.ops as K
 from models import get_optimizer, get_loss
+from models_dir.model_fusion import one_sensor_model_fusion
 
 class MAML:
     def __init__(
             self,
             model_fn,
-            loss = 'Huber',
+            loss = 'Huber', metrics=['mae'],
             inner_learning_rate=0.01,
             outer_learning_rate=0.001,
             inner_batch_size=1,
@@ -32,39 +33,36 @@ class MAML:
         self.inner_batch_size = inner_batch_size
         self.inner_steps = inner_steps
         self.loss = get_loss(loss)
+        self.metrics = metrics#['mae']
 
         # Initialize meta-optimizer
         self.meta_optimizer = keras.optimizers.Adam(learning_rate=outer_learning_rate)
 
     def inner_loop(self, support_data, support_labels):
         """
-        Perform inner loop adaptation on a single task
-
-        Args:
-            support_data: Training data for the task
-            support_labels: Training labels for the task
-
-        Returns:
-            Updated model parameters for the task
+        Perform inner loop adaptation with multiple steps
         """
-        # Get initial parameters
         task_parameters = [tf.identity(w) for w in self.model.trainable_variables]
+        current_parameters = task_parameters
 
-        with tf.GradientTape() as tape:
-            predictions = self.model(support_data)
-            loss = self.loss(support_labels, predictions)
-            loss = tf.reduce_mean(loss)
+        # Multiple adaptation steps
+        for _ in range(self.inner_steps):
+            with tf.GradientTape() as tape:
+                # Temporarily set current parameters
+                for w, w_current in zip(self.model.trainable_variables, current_parameters):
+                    w.assign(w_current)
 
-        # Compute gradients
-        gradients = tape.gradient(loss, self.model.trainable_variables)
+                predictions = self.model(support_data)[0]
+                loss = self.loss(support_labels, predictions)
+                loss = tf.reduce_mean(loss)
 
-        # Update task-specific parameters
-        updated_parameters = [
-            w - self.inner_learning_rate * g
-            for w, g in zip(task_parameters, gradients)
-        ]
+            gradients = tape.gradient(loss, self.model.trainable_variables)
+            current_parameters = [
+                w - self.inner_learning_rate * g
+                for w, g in zip(current_parameters, gradients)
+            ]
 
-        return updated_parameters
+        return current_parameters, loss
 
     def outer_loop(self, tasks_batch):
         """
@@ -78,7 +76,7 @@ class MAML:
             for support_snc1, support_snc2, support_snc3, support_labels, query_snc1, query_snc2, query_snc3, query_labels in tasks_batch:
                 # Inner loop adaptation
                 support_data = [support_snc1, support_snc2, support_snc3]
-                updated_parameters = self.inner_loop(support_data, support_labels)
+                updated_parameters, _ = self.inner_loop(support_data, support_labels)
 
                 # Temporarily update model parameters
                 original_parameters = [tf.identity(w) for w in self.model.trainable_variables]
@@ -87,7 +85,7 @@ class MAML:
 
                 # Compute loss on query set
                 query_data = [query_snc1, query_snc2, query_snc3]
-                predictions = self.model(query_data)
+                predictions = self.model(query_data)[0]
                 query_loss = self.loss(
                     query_labels, predictions
                 )
@@ -124,7 +122,7 @@ class MAML:
 
 
 # Example usage
-def create_maml_model(window_size_snc = 256, scattering_type='SEMG',
+def create_one_sensor_model(window_size_snc = 256, scattering_type='SEMG',
                       J_snc=5, Q_snc=(2, 1),
                       undersampling=4.8,
                       use_attention=True,
@@ -191,4 +189,38 @@ def create_maml_model(window_size_snc = 256, scattering_type='SEMG',
                       run_eagerly=True)
     return model
 
-
+def create_maml_model(window_size_snc = 256, scattering_type='SEMG',
+                      J_snc=5, Q_snc=(2, 1),
+                      undersampling=4.8,
+                      use_attention=True,
+                      attention_layers_for_one_sensor=2, key_dim_for_time_attention=5,
+                      units=10, dense_activation='relu',
+                      max_weight=2, final_activation='sigmoid',
+                      optimizer='Adam',
+                      learning_rate=0.0016,weight_decay=0.0,
+                      loss = 'Huber'):
+    one_sensor_parameters = {'window_size_snc' : window_size_snc,
+                             'scattering_type':scattering_type,
+                      'J_snc':J_snc, 'Q_snc':Q_snc,
+                      'undersampling':undersampling,
+                      'use_attention':use_attention,
+                      'attention_layers_for_one_sensor':attention_layers_for_one_sensor, 'key_dim_for_time_attention':key_dim_for_time_attention,
+                      'units':units, 'dense_activation':dense_activation,
+                      'max_weight':max_weight, 'final_activation':final_activation,
+                      'optimizer':optimizer,
+                      'learning_rate':learning_rate,'weight_decay':weight_decay,
+                      'loss': loss}
+    snc_model_1 = create_one_sensor_model(sensor_num=1,**one_sensor_parameters)
+    snc_model_2 = create_one_sensor_model(sensor_num=2,**one_sensor_parameters)
+    snc_model_3 = create_one_sensor_model(sensor_num=3, **one_sensor_parameters)
+    model = one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
+                            fusion_type='majority_vote',
+                            window_size_snc=window_size_snc,
+                            use_sensor_ordering=True, num_sensor_attention_heads=2,
+                            max_weight=max_weight,
+                            trainable=True,
+                            optimizer=optimizer, learning_rate=learning_rate,
+                            loss=loss,
+                            compile=False
+                            )
+    return model
