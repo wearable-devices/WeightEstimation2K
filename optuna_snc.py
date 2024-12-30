@@ -226,7 +226,7 @@ def objective(trial):
     personal_metrics_dict = {}
     for person in persons_for_test:
         print(f'Training on {person}')
-        attention_snc_model_parameters_dict['max_weight'] = 2.5#max(train_dict[person].keys()) + 0.5
+        attention_snc_model_parameters_dict['max_weight'] = 2.1#max(train_dict[person].keys()) + 0.5
         if use_pretrained_model:
             model_snc_path = initial_model_path
             custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain}
@@ -379,12 +379,13 @@ def logging_dirs():
 if __name__ == "__main__":
     SENSOR_NUM = 3
     persons_for_train_initial_model = ['Avihoo', 'Aviner', 'Shai', #'HishamCleaned',
-                                       'Alisa','Molham']
+                                       'Alisa','Molham', 'Daniel',
+                                      'Foad',
+                                     'Asher2', ]
     persons_for_test = [ 'Leeor',
-       #                  'Liav',
-       #                   'Daniel',
-       #                   'Foad',
-       #                  'Asher2', 'Lee',
+                        'Liav',
+       #
+                                          'Lee',
        #             'Ofek',
        # 'Tom', #'Guy'
                         ]

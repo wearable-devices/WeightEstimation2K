@@ -283,3 +283,20 @@ def plot_feature_space(persons_dict, num_of_components=2):
     # print(f"Animated GIF saved to: {gif_path}")
 
     # print(f"Interactive plot saved to: {html_path}")
+
+def plot_curves(dict, show=False, save_path=None, picture_name='_'):
+    # Plot both training and validation losses
+    plt.figure(figsize=(12, 5))
+    for name, value in dict.items():
+        plt.plot(value, label=name)
+
+    # plt.title(f'Adaptation Progress for {user}')
+    plt.xlabel('Iteration')
+    plt.ylabel('Loss')
+    plt.legend()
+    if show:
+        plt.show()
+    if save_path is not None:
+        plt.savefig(os.path.join(save_path, picture_name))
+    # Clear the current figure
+    plt.close()

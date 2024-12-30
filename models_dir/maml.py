@@ -4,18 +4,21 @@ from keras import layers
 import numpy as np
 from custom.layers import *
 import keras.ops as K
-from models import get_optimizer, get_loss
+from models import get_optimizer, get_loss, get_metric
 from models_dir.model_fusion import one_sensor_model_fusion
 
 class MAML:
     def __init__(
             self,
             model_fn,
-            loss = 'Huber', metrics=['mae'],
+            loss = 'Huber',
+            metrics=['mae'],
             inner_learning_rate=0.01,
             outer_learning_rate=0.001,
             inner_batch_size=1,
             inner_steps=1,
+            model_parameters_dict={}
+            # model_parameters_dict = {}
     ):
         """
         Initialize MAML with the model architecture and hyperparameters
@@ -27,13 +30,13 @@ class MAML:
             inner_batch_size: Batch size for inner loop training
             inner_steps: Number of gradient steps for adaptation
         """
-        self.model = model_fn()
+        self.model = model_fn(**model_parameters_dict)#(**model_parameters_dict)
         self.inner_learning_rate = inner_learning_rate
         self.outer_learning_rate = outer_learning_rate
         self.inner_batch_size = inner_batch_size
         self.inner_steps = inner_steps
         self.loss = get_loss(loss)
-        self.metrics = metrics#['mae']
+        self.metrics = {metric: get_metric(metric) for metric in metrics}#['mae']
 
         # Initialize meta-optimizer
         self.meta_optimizer = keras.optimizers.Adam(learning_rate=outer_learning_rate)
@@ -72,7 +75,9 @@ class MAML:
             tasks_batch: List of (support_data, support_labels, query_data, query_labels)
         """
         with tf.GradientTape() as tape:
+            total_metrics  = []
             total_loss = 0
+            total_metrics = {metric_name:0 for metric_name in self.metrics.keys()}
             for support_snc1, support_snc2, support_snc3, support_labels, query_snc1, query_snc2, query_snc3, query_labels in tasks_batch:
                 # Inner loop adaptation
                 support_data = [support_snc1, support_snc2, support_snc3]
@@ -89,13 +94,22 @@ class MAML:
                 query_loss = self.loss(
                     query_labels, predictions
                 )
+                query_metrics = {}
+                for metric_name, metric_fn in self.metrics.items():
+                   query_metrics[metric_name] = metric_fn(query_labels, predictions)
+                   total_metrics[metric_name] += query_metrics[metric_name]
+                # query_metrics = [metric(query_labels, predictions) for metric in self.metrics]
+                # for i, metric in enumerate(self.metrics):
+                #     total_metrics[i]+=tf.reduce_mean(query_metrics[i])
                 total_loss += tf.reduce_mean(query_loss)
+
 
                 # Restore original parameters
                 for w, w_original in zip(self.model.trainable_variables, original_parameters):
                     w.assign(w_original)
 
             mean_loss = total_loss / len(tasks_batch)
+            mean_metrics = {metric_name: metric_value/len(tasks_batch) for metric_name, metric_value in total_metrics.items()}
 
         # Compute meta-gradients
         meta_gradients = tape.gradient(mean_loss, self.model.trainable_variables)
@@ -105,7 +119,7 @@ class MAML:
             zip(meta_gradients, self.model.trainable_variables)
         )
 
-        return mean_loss
+        return mean_loss, {name :m.numpy() for name,m in mean_metrics.items()}
 
     def adapt_to_task(self, support_data, support_labels):
         """

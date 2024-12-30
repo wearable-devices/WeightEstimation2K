@@ -30,7 +30,11 @@ def get_loss(loss='mse'):
         loss = keras.losses.Huber()
     return loss
 
+def get_metric(metric='mae'):
+    if metric == 'mae':
+        metric = keras.metrics.MeanAbsoluteError()
 
+    return metric
 
 
 def sensor_attention_processing(scattered_snc, units = 5, conv_activation='tanh',
@@ -929,7 +933,7 @@ def one_sensor_weight_estimation_with_zeroidhint_model(sensor_num=2, window_size
 
     # x = x-user_id
     # mult = tf.matmul(x,y)
-    conc = K.concatenate([x,y], axis=-1)
+    conc = x+y #K.concatenate([x,y], axis=-1)
 
     out = [(max_weight) * keras.layers.Dense(1, activation=final_activation, name='final_dense_1')(conc), x]
     # out = [(max_weight) * mult, x]
