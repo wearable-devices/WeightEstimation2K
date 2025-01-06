@@ -125,6 +125,8 @@ def objective(trial):
     train_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size_hp, batch_size,
                                             epoch_len, persons,
                                             data_mode='Train', contacts=['M'])
+
+
     val_ds = create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_size_hp, batch_size,
                                           epoch_len, persons,
                                           data_mode='Test', contacts=['M'])
@@ -170,7 +172,8 @@ def logging_dirs():
 
 if __name__ == "__main__":
     logs_root_dir, log_dir, trials_dir = logging_dirs()
-    file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted"#'/home/wld-algo-6/DataCollection/Data'
+    # file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted"#'/home/wld-algo-6/DataCollection/Data'
+    file_dir = '/home/wld-algo-6/Data/Sorted'
     person_dict = get_weight_file_from_dir(file_dir)
     person_zero_dict = {person_name: weight_dict[0] for person_name, weight_dict in person_dict.items() if 0 in weight_dict.keys()}
 
@@ -182,7 +185,7 @@ if __name__ == "__main__":
                'Liav',
                 'Foad',
                'Molham' ,
-               'Ofek', 'Shai'
+               'Ofek', 'Shai', 'Itai', 'Michael','Perry','Tom'
                ]#,'Guy']
 
     # Create person to index mapping
@@ -241,7 +244,7 @@ if __name__ == "__main__":
     N_TRIALS = 100
     # Create optuna study
     storage_name = os.path.join(f"sqlite:///{logs_root_dir.resolve()}", "wld.db")
-    study_name = "attention_weight_classifier_snc" + datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
+    study_name = "attention_weight_classifier_snc_for_user_zeroID" + datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
     study = optuna.create_study(directions=['minimize'], study_name=study_name,
                                 sampler=optuna.samplers.NSGAIISampler(),
                                 storage=storage_name, load_if_exists=True)

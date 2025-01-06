@@ -90,7 +90,7 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
         #     print(' picture name: ', self.picture_name)
 
     def on_test_end(self,epoch, logs=None):
-        if self.phase == 'test' and  self.current_epoch % 5  == 0:
+        if (self.phase == 'test' or self.phase == 'Test') and  self.current_epoch % 5  == 0:
             self.calc_feature_space()
             self.plot_feature_space_optuna()
 
@@ -159,9 +159,6 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
                                                                     perplexity=10, random_state=42, proj=self.proj,
                                                                     metric=self.metric)
         print(f'Feature space for layer {self.layer_name} is calculated')
-        # print(self.projected_layer_output_dict)
-        # except:
-        #     print('Problem with layer', self.layer_name)
 
     def plot_feature_space_optuna(self):
         if  self.task == 'weight_estimation':
@@ -198,7 +195,21 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
                 user_num += 1
                 used_color_map = color_map_2 if user_num % 2 == 0 else color_map
                 for label, tensor in labels.items():
-                    if self.num_of_components == 2:
+                    if self.num_of_components == 1:
+                        # Set all y-values to a constant (e.g., 0) to place them on one line
+                        fig.add_trace(go.Scatter(
+                            x=tensor[:, 0],  # Use the single component for x-axis
+                            y=[0] * len(tensor),  # Create array of zeros same length as tensor
+                            mode='markers',
+                            marker=dict(
+                                size=8,
+                                color=used_color_map[label],
+                                symbol=marker_map[person],
+                                opacity=0.8
+                            ),
+                            name=f"{person} - {label}"
+                        ))
+                    elif self.num_of_components == 2:
                         fig.add_trace(go.Scatter(
                             x=tensor[:, 0],
                             y=tensor[:, 1],
@@ -237,9 +248,11 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
                 4: 'yellow',
                 5: 'sienna',
                 6: 'brown',
+                7: 'cyan',
                 8: 'black',
                 9: 'pink',
-                10: 'dimgray'
+                10: 'dimgray',
+                11: 'seagreen', 12: 'hotpink', 13: 'darkorange'
             }
 
             # Create the plot
@@ -270,7 +283,7 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
                             mode='markers',
                             marker=dict(
                                 size=8,
-                                color=color_map[user_num%10],
+                                color=color_map[user_num%14],
                                 # symbol=marker_map[person],
                                 opacity=0.8
                             ),
@@ -278,48 +291,48 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
                             name=f" {person} - {label} kg"
                         ))
                 # user_num+=1
-                # Update layout
-                fig.update_layout(
-                    title=f"Feature Space Visualization",
-                    # of {self.layer_name}_proj_{self.proj}_name_{self.picture_name}",
-                    xaxis_title="X",
-                    yaxis_title="Y",
-                    legend_title="User - Weight"
-                )
+        # Update layout
+        fig.update_layout(
+            title=f"Feature Space Visualization",
+            # of {self.layer_name}_proj_{self.proj}_name_{self.picture_name}",
+            xaxis_title="X",
+            yaxis_title="Y",
+            legend_title="User - Weight"
+        )
 
-                # Save the plot as HTML
-                html_path = os.path.join(self.trial_dir,
-                                         f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.html")
-                fig.write_html(html_path, full_html=True)
-                # Save the plot as a GIF
-                gif_path = os.path.join(self.trial_dir,
-                                        f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.gif")
+        # Save the plot as HTML
+        html_path = os.path.join(self.trial_dir,
+                                 f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.html")
+        fig.write_html(html_path, full_html=True)
+        # Save the plot as a GIF
+        gif_path = os.path.join(self.trial_dir,
+                                f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.gif")
 
-                # Create frames for animation
-                # frames = []
-                # for i in range(0, 360, 10):  # Rotate 360 degrees in steps of 10
-                #     fig.update_layout(scene_camera=dict(eye=dict(x=1.25 * np.cos(np.radians(i)),
-                #                                                  y=1.25 * np.sin(np.radians(i)),
-                #                                                  z=0.5)))
-                #     img_bytes = fig.to_image(format="png")
-                #     img = Image.open(io.BytesIO(img_bytes))
-                #     frames.append(img)
-                #
-                # # Save frames as GIF
-                # gif_path = os.path.join(self.trial_dir,
-                #                         f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.gif")
-                #
-                # frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=200, loop=0)
+        # Create frames for animation
+        # frames = []
+        # for i in range(0, 360, 10):  # Rotate 360 degrees in steps of 10
+        #     fig.update_layout(scene_camera=dict(eye=dict(x=1.25 * np.cos(np.radians(i)),
+        #                                                  y=1.25 * np.sin(np.radians(i)),
+        #                                                  z=0.5)))
+        #     img_bytes = fig.to_image(format="png")
+        #     img = Image.open(io.BytesIO(img_bytes))
+        #     frames.append(img)
+        #
+        # # Save frames as GIF
+        # gif_path = os.path.join(self.trial_dir,
+        #                         f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.gif")
+        #
+        # frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=200, loop=0)
 
-                # print(f"Animated GIF saved to: {gif_path}")
+        # print(f"Animated GIF saved to: {gif_path}")
 
-                print(f"Interactive plot saved to: {html_path}")
+        print(f"Interactive plot saved to: {html_path}")
 
-                # # Optionally, save as PNG as well
-                # png_path = os.path.join(self.trial_dir,
-                #                         f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.png")
-                # fig.write_image(png_path)
-                # print(f"Static image saved to: {png_path}")
+        # # Optionally, save as PNG as well
+        # png_path = os.path.join(self.trial_dir,
+        #                         f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.png")
+        # fig.write_image(png_path)
+        # print(f"Static image saved to: {png_path}")
 
     def cleanup(self):
         self.projected_layer_output_dict = None

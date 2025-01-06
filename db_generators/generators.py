@@ -112,7 +112,7 @@ class UserIdModelGenerator(keras.utils.Sequence):
         self.person_to_idx = person_to_idx
         self.window_size = window_size
         self.batch_size = batch_size
-        self.person_names = list(self.persons_dict.keys()) if person_names is 'all' else person_names
+        self.person_names = list(self.persons_dict.keys()) if person_names is None else person_names
         self.epoch_len = epoch_len
         self.phase = data_mode
         self.contacts = contacts
@@ -152,7 +152,7 @@ class UserIdModelGenerator(keras.utils.Sequence):
                     person_data =  [record   for  record in self.persons_zero_dict[person_name] if record['contact'] in self.contacts]
                 except:
                     print(person_name)
-                    print(self.persons_dict[person_name])
+                    print(self.persons_zero_dict[person_name])
             try:
                 person_data = [record for record in person_data  if record['contact'] in self.contacts]
             except:
@@ -233,6 +233,7 @@ def create_data_for_userId_model(person_zero_dict, person_to_idx, snc_window_siz
         person_names=used_persons,
         contacts=contacts
     )
+    train_generator.__getitem__(0)
 
     train_ds = convert_userIdModelgenerator_to_dataset(train_generator)
     return train_ds

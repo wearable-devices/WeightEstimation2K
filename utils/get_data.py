@@ -1,3 +1,4 @@
+import keras.src.ops
 import tensorflow as tf
 import pandas as pd
 import re
@@ -135,75 +136,84 @@ def get_weight_file_from_dir(file_dir, multiplier=1):
 
 
 def mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_person=5,
-                        J_snc=6, Q_snc=(2,1), undersampling=5, contacts=['L', 'M', 'R'], scattering_type='old'):
+                        J_snc=6, Q_snc=(2,1), undersampling=5, contacts=['L', 'M', 'R'],phases = ['Train','Test'], scattering_type='old'):
     '''takes persons_dict, takes samples_per_weight_per_person=5 windows for each snc sensor, applyes scattering and returns obtained dictionary
     scattering_type could be 'old' or 'SEMG'
     '''
-    persons_names = [person_key + contact for person_key in persons_dict for contact in contacts]
+    persons_names = [person_key + contact + '_'+phase for person_key in persons_dict for contact in contacts for phase in phases]
     output_dict = {person: {} for person in persons_names}
+    std_dict = {person: {} for person in persons_names}
     for person, weight_dict in persons_dict.items():
         # weight_dict_part = {weight: weight_dict[weight] for weight in self.considered_weights if weight in weight_dict}
         # label = weight
         for contact in contacts:
-            for weight, records in weight_dict.items():
-                used_records = [record for record in records if record['contact'] == contact]
-                if len(used_records) > 0:
-                    snc1_batch = []
-                    snc2_batch = []
-                    snc3_batch = []
-                    for _ in range(samples_per_weight_per_person):
-                        # Randomly select a file for this label
-                        file_idx = tf.random.uniform([], 0, len(used_records), dtype=tf.int32)
-                        file_data = used_records[file_idx.numpy()]
-                        # Generate a random starting point within the file
-                        start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
-                                                  dtype=tf.int32)
+            for phase in phases:
+                for weight, records in weight_dict.items():
+                    used_records = [record for record in records if (record['contact'] == contact and record['phase'] == phase)]
+                    if len(used_records) > 0:
+                        snc1_batch = []
+                        snc2_batch = []
+                        snc3_batch = []
+                        for _ in range(samples_per_weight_per_person):
+                            # Randomly select a file for this label
+                            file_idx = tf.random.uniform([], 0, len(used_records), dtype=tf.int32)
+                            file_data = used_records[file_idx.numpy()]
+                            # Generate a random starting point within the file
+                            start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
+                                                      dtype=tf.int32)
 
-                        snc_1_window = file_data['snc_1'][start:start + window_size]
-                        snc_2_window = file_data['snc_2'][start:start + window_size]
-                        snc_3_window = file_data['snc_3'][start:start + window_size]
-                        snc_1_window = tf.cast(snc_1_window, dtype=float)# / 2 ** 24
-                        snc_2_window = tf.cast(snc_2_window, dtype=float)# / 2 ** 24
-                        snc_3_window = tf.cast(snc_3_window, dtype=float)# / 2 ** 24
-                        # Extract the window
-                        snc1_batch.append(snc_1_window)
-                        snc2_batch.append(snc_2_window)
-                        snc3_batch.append(snc_3_window)
-                        # labels.append(label)
+                            snc_1_window = file_data['snc_1'][start:start + window_size]
+                            snc_2_window = file_data['snc_2'][start:start + window_size]
+                            snc_3_window = file_data['snc_3'][start:start + window_size]
+                            snc_1_window = tf.cast(snc_1_window, dtype=float)# / 2 ** 24
+                            snc_2_window = tf.cast(snc_2_window, dtype=float)# / 2 ** 24
+                            snc_3_window = tf.cast(snc_3_window, dtype=float)# / 2 ** 24
+                            # Extract the window
+                            snc1_batch.append(snc_1_window)
+                            snc2_batch.append(snc_2_window)
+                            snc3_batch.append(snc_3_window)
+                            # labels.append(label)
 
-                    persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
-                    if scattering_type=='old':
-                        scattering_layer = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling,
-                                                                max_order=2)
-                    elif scattering_type == 'SEMG':
-                        scattering_layer = SEMGScatteringTransform()
+                        persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
+                        if scattering_type=='old':
+                            scattering_layer = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling,
+                                                                    max_order=2)
+                        elif scattering_type == 'SEMG':
+                            scattering_layer = SEMGScatteringTransform(undersampling=undersampling)
 
-                    scattered_snc1, scattered_snc11 = scattering_layer(persons_input_data[0])
-                    scattered_snc2, scattered_snc22 = scattering_layer(persons_input_data[1])
-                    scattered_snc3, scattered_snc33 = scattering_layer(persons_input_data[2])
+                        scattered_snc1, scattered_snc11 = scattering_layer(persons_input_data[0])
+                        scattered_snc2, scattered_snc22 = scattering_layer(persons_input_data[1])
+                        scattered_snc3, scattered_snc33 = scattering_layer(persons_input_data[2])
 
-                    if scattering_type == 'old':
-                        scattered_snc1 = tf.squeeze(scattered_snc1, axis=-1)
-                        scattered_snc11 = tf.squeeze(scattered_snc11, axis=-1)
+                        if scattering_type == 'old':
+                            scattered_snc1 = tf.squeeze(scattered_snc1, axis=-1)
+                            scattered_snc11 = tf.squeeze(scattered_snc11, axis=-1)
 
-                        scattered_snc2 = tf.squeeze(scattered_snc2, axis=-1)
-                        scattered_snc22 = tf.squeeze(scattered_snc22, axis=-1)
+                            scattered_snc2 = tf.squeeze(scattered_snc2, axis=-1)
+                            scattered_snc22 = tf.squeeze(scattered_snc22, axis=-1)
 
-                        scattered_snc3 = tf.squeeze(scattered_snc3, axis=-1)
-                        scattered_snc33 = tf.squeeze(scattered_snc33, axis=-1)
+                            scattered_snc3 = tf.squeeze(scattered_snc3, axis=-1)
+                            scattered_snc33 = tf.squeeze(scattered_snc33, axis=-1)
 
-                    scattered_snc1_mean = tf.reduce_mean(scattered_snc1, axis=-1)
-                    scattered_snc2_mean = tf.reduce_mean(scattered_snc2, axis=-1)
-                    scattered_snc3_mean = tf.reduce_mean(scattered_snc3, axis=-1)
+                        scattered_snc1_mean = tf.reduce_mean(scattered_snc1, axis=1)
+                        scattered_snc2_mean = tf.reduce_mean(scattered_snc2, axis=1)
+                        scattered_snc3_mean = tf.reduce_mean(scattered_snc3, axis=1)
 
-                    # scattered_snc1_mean = tfp.stats.percentile(scattered_snc1, 50.0, axis=-1)
-                    # scattered_snc2_mean = tfp.stats.percentile(scattered_snc2, 50.0, axis=-1)
-                    # scattered_snc3_mean = tfp.stats.percentile(scattered_snc3, 50.0, axis=-1)
+                        # scattered_snc1_mean = tfp.stats.percentile(scattered_snc1, 50.0, axis=-1)
+                        # scattered_snc2_mean = tfp.stats.percentile(scattered_snc2, 50.0, axis=-1)
+                        # scattered_snc3_mean = tfp.stats.percentile(scattered_snc3, 50.0, axis=-1)
 
-                    fused_sensors = tf.concat([scattered_snc1_mean, scattered_snc2_mean, scattered_snc3_mean], axis=-1)
-                    # fused_sensors = tf.concat([scattered_snc2_mean], axis=-1)
-                    output_dict[person+contact][weight] = fused_sensors
-    return output_dict
+                        fused_sensors = tf.concat([scattered_snc1_mean, scattered_snc2_mean, scattered_snc3_mean], axis=-1)
+                        fused_sensors = tf.concat([scattered_snc2_mean], axis=-1)
+
+                        # Calculate global std dev (single value) for sensor 2
+                        global_std = tf.math.reduce_std(scattered_snc2_mean).numpy()
+                        std_per_dimension = tf.math.reduce_std(scattered_snc2_mean, axis=0)[1]
+
+                        output_dict[person+contact+'_'+phase][weight] = fused_sensors
+
+                        std_dict[person+contact+'_'+phase][weight] = keras.src.ops.expand_dims(keras.src.ops.expand_dims(std_per_dimension, axis=-1), axis=-1)
+    return output_dict, std_dict
 
 
 

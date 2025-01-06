@@ -187,7 +187,7 @@ def snc_scat_all(snc1_data,snc2_data, snc3_data, scattered_snc1, scattered_snc2,
 
     plt.show()
 
-def plot_feature_space(persons_dict, num_of_components=2):
+def plot_feature_space(persons_dict, num_of_components=2, save_path=None, img_name=''):
     # Color map for labels
     color_map = {
         0: 'red',
@@ -221,7 +221,21 @@ def plot_feature_space(persons_dict, num_of_components=2):
         user_num += 1
         used_color_map = color_map_2 if user_num % 2 == 0 else color_map
         for label, tensor in labels.items():
-            if num_of_components == 2:
+            if num_of_components == 1:
+                # Set all y-values to a constant (e.g., 0) to place them on one line
+                fig.add_trace(go.Scatter(
+                    x=tensor[:, 0],  # Use the single component for x-axis
+                    y=[0] * len(tensor),  # Create array of zeros same length as tensor
+                    mode='markers',
+                    marker=dict(
+                        size=8,
+                        color=used_color_map[label],
+                        symbol=marker_map[person],
+                        opacity=0.8
+                    ),
+                    name=f"{person} - {label}"
+                ))
+            elif num_of_components == 2:
                 fig.add_trace(go.Scatter(
                     x=tensor[:, 0],
                     y=tensor[:, 1],
@@ -259,10 +273,11 @@ def plot_feature_space(persons_dict, num_of_components=2):
     )
 
     fig.show()
-    # Save the plot as HTML
-    # html_path = os.path.join(self.trial_dir,
-    #                          f"{self.layer_name}_{self.proj}_{self.metric}_{self.num_of_components}_comp_feature_space_{self.picture_name}.html")
-    # fig.write_html(html_path, full_html=True)
+    if save_path is not None:
+        # Save the plot as HTML
+        html_path = os.path.join(save_path,
+                                 f"{img_name}.html")
+        fig.write_html(html_path, full_html=True)
 
     # Create frames for animation
     # frames = []

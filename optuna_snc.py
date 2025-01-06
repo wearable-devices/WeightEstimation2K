@@ -50,9 +50,9 @@ def objective(trial):
     # Define the search space and sample parameter values
     snc_window_size_hp = 648#trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
     addition_weight_hp = 0#trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
-    epoch_num =  40
-    epoch_len = 5  # None
-    use_pretrained_model = True  # trial.suggest_categorical('use_pretrained_model',[True, False])
+    epoch_num =  60#40
+    epoch_len = 10#5  # None
+    use_pretrained_model = False  # trial.suggest_categorical('use_pretrained_model',[True, False])
 
     # weight_loss_dict_0 = {weight: 1 for i, weight in enumerate([0, 1, 2, 4, 6, 8])}
     # weight_loss_dict_1 = {weight: (i + 1) / 6 for i, weight in enumerate([0, 1, 2, 4, 6, 8])}
@@ -134,19 +134,21 @@ def objective(trial):
                                                  }
 
     average_sensors_weight_estimation_model_dict = {'window_size_snc': snc_window_size_hp,
-                                                    'J_snc': 7, 'Q_snc': (2, 1),
+                                                    'J_snc': 7,
+                                                    'Q_snc': (2, 1),
                                                     'undersampling': 3,#trial.suggest_float('undersampling', 2, 4, step=0.2),#4.8,
                                                     'scattering_max_order': 1,
-                                                    'units': 9,#trial.suggest_int('units', 5, 15),
-                                                    'dense_activation':'tanh',# trial.suggest_categorical('dense_activation', ['tanh',  'relu', ]),
-                                                    'use_attention': True,# trial.suggest_categorical('use_attention', [True, False ]),
+                                                    'units': 15,#trial.suggest_int('units', 4, 24), #9
+                                                    'dense_activation': 'relu',#trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
+                                                    'use_attention': False,#True,# trial.suggest_categorical('use_attention', [True, False ]),
                                                     'key_dim_for_time_attention':5,#trial.suggest_int('key_dim_for_time_attention', 4, 12),#5,
-                                                    'attention_layers_for_one_sensor': trial.suggest_int('key_dim_for_time_attention', 2, 3),
+                                                    'attention_layers_for_one_sensor': 2,#trial.suggest_int('key_dim_for_time_attention', 2, 3),
                                                     'use_time_ordering': False,
                                                     'scattering_type': 'SEMG',#trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
-                                                    # 'final_activation': trial.suggest_categorical('final_activation',['sigmoid', 'tanh']),
-                                                    'optimizer': 'Adam', 'learning_rate': 0.0016,
-                                                    'weight_decay': 0.0, 'max_weight': 2+addition_weight_hp, 'compile': True,
+                                                    'final_activation': trial.suggest_categorical('final_activation',['sigmoid', 'tanh']),
+                                                    'add_noise': trial.suggest_categorical('add_noise', [True, False ]),
+                                                    'optimizer': 'Adam', 'learning_rate': 0.016,#0.0016,
+                                                    'weight_decay': 0.0, 'max_weight': max_weight+addition_weight_hp, 'compile': True,
                                                     'loss': 'Huber',# trial.suggest_categorical('loss', ['Huber', 'mse'])
                                                     # 'loss_balance': trial.suggest_float('loss_balance', 0.0, 1, step=0.1),
                                                      }
@@ -161,7 +163,7 @@ def objective(trial):
     # data_vis_embed = val_ds.as_numpy_iterator().next()
     model_name = f"model_trial_{trial.number}"
     # All callbacks for this trial
-    labels_to_balance = [0, 0.5, 1, 2]
+
 
     # persons_val_loss_dict = {person: 0 for person in persons_dirs}
     # model = create_attention_weight_distr_estimation_model(**attention_distr_snc_model_parameters_dict)
@@ -171,29 +173,24 @@ def objective(trial):
     model_sensor_3 = one_sensors_weight_estimation_proto_model(sensor_num=3,
                                                                **average_sensors_weight_estimation_model_dict)
 
-    fusion_type_tp = 'majority_vote'#trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ]),
-    model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
-                             fusion_type=fusion_type_tp,
-                             window_size_snc=snc_window_size_hp,
-                             trainable=True,
-                             optimizer=average_sensors_weight_estimation_model_dict['optimizer'],
-                                    learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
-                             compile=True
-                             )
+    # fusion_type_tp = trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ]),
+    # model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
+    #                          fusion_type=fusion_type_tp,
+    #                          window_size_snc=snc_window_size_hp,
+    #                          trainable=True,
+    #                          optimizer=average_sensors_weight_estimation_model_dict['optimizer'],
+    #                                 learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
+    #                          compile=True
+    #                          )
+    model = model_sensor_2
 
-    # model = create_rms_weight_estimation_model(**attention_snc_model_parameters_dict)
     model.summary()
     total_params, trainable_params, non_trainable_params = count_parameters(model)
-
-
-    # # Create datasets
-
 
     if use_pretrained_model:
         train_ds = create_data_for_model(person_dict, snc_window_size_hp, batch_size_np, labels_to_balance, epoch_len,
                                          used_persons=persons_for_train_initial_model, data_mode='Train', contacts=['M'])
         val_ds = train_ds
-
         # Before training, verify model configuration
         print("Model configuration:")
         print(model.get_config())
@@ -216,8 +213,6 @@ def objective(trial):
             verbose=1,
         )
 
-
-
     initial_model_path = os.path.join(trial_dir, 'initial_pre_trained_model' + '.keras')
     model.save(initial_model_path, save_format='keras')
     print(f'Model saved to {trial_dir}')
@@ -227,14 +222,13 @@ def objective(trial):
     for person in persons_for_test:
         print(f'Training on {person}')
         attention_snc_model_parameters_dict['max_weight'] = 2.1#max(train_dict[person].keys()) + 0.5
-        if use_pretrained_model:
-            model_snc_path = initial_model_path
-            custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain}
-            model = keras.models.load_model(model_snc_path, custom_objects=custom_objects,
-                                               compile=True,
-                                               safe_mode=False)
-        else:
-            model = create_attention_weight_estimation_model(**attention_snc_model_parameters_dict)
+
+        model_snc_path = initial_model_path
+        custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain}
+        model = keras.models.load_model(model_snc_path, custom_objects=custom_objects,
+                                           compile=True,
+                                           safe_mode=False)
+
 
         # total_params, trainable_params, non_trainable_params = count_parameters(model)
         train_ds = create_data_for_model(person_dict, snc_window_size_hp, batch_size_np, labels_to_balance, epoch_len,
@@ -253,12 +247,13 @@ def objective(trial):
         callbacks = [NanCallback(),
             TensorBoard(log_dir=os.path.join(trial_dir, 'tensorboard')),
             SaveKerasModelCallback(trial_dir, f"model_trial_{trial.number}"),
-            # FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='dense_1', data_mode = 'Test', proj='pca',
-            #                          metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
-            #                          num_of_components=3, samples_per_label_per_person=10, phase='Train'),
-            # FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='dense_1_for_sensor_1', data_mode='Test', proj='pca',
-            #                          metric="euclidean", picture_name=person + 'test_dict', used_persons=[person],
-            #                          num_of_components=3, samples_per_label_per_person=10, phase='Train'),
+            FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='dense_1', data_mode = 'Test', proj='pca',
+                                     metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
+                                     num_of_components=3, samples_per_label_per_person=10, phase='test', task='weight_estimation'),
+
+            FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='final_dense_1', data_mode='Test', proj='none',
+                                     metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
+                                     num_of_components=1, samples_per_label_per_person=10, phase='test'),
             # FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='dense_1_for_sensor_2', data_mode='Test',
             #                          proj='pca',
             #                          metric="euclidean", picture_name=person + 'test_dict', used_persons=[person],
@@ -297,21 +292,10 @@ def objective(trial):
             val_ds,
             return_dict=True
         )
-        try:
-            try:
-                person_mae = metrics_values['mae']
-                person_mse = metrics_values['mse']
-            except:
-                person_mae = metrics_values['multiply_mae']
-                person_mse = metrics_values['multiply_mse']
-        except:
-            try:
-                person_mae = metrics_values['majority_vote_mae']
-                person_mse = 1000
-            except:
-                person_mae = metrics_values['majority_vote_1_mae']
-                person_mse = 1000
-
+        mae_key = [key for key in metrics_values.keys() if 'mae' in key.lower()][0]
+        person_mae = metrics_values[mae_key]
+        mse_key = [key for key in metrics_values.keys() if 'mse' in key.lower()][0]
+        person_mse = metrics_values[mse_key]
 
         personal_metrics_dict[person] = {'mae':person_mae, 'mse': person_mse}
 
@@ -378,6 +362,9 @@ def logging_dirs():
 
 if __name__ == "__main__":
     SENSOR_NUM = 3
+    # labels_to_balance = [0, 0.5, 1, 2]
+    labels_to_balance = [0, 0.5, 1]
+    max_weight = 1
     persons_for_train_initial_model = ['Avihoo', 'Aviner', 'Shai', #'HishamCleaned',
                                        'Alisa','Molham', 'Daniel',
                                       'Foad',

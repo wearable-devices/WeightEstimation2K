@@ -738,3 +738,24 @@ class MajorityVote(keras.layers.Layer):
         )
 
         return result
+
+
+
+class GaussianNoiseLayer(keras.layers.Layer):
+    def __init__(self, stddev=0.1, **kwargs):
+        super(GaussianNoiseLayer, self).__init__(**kwargs)
+        self.stddev = stddev
+
+    def call(self, inputs, training=None):
+        if training:
+            noise = tf.random.normal(shape=tf.shape(inputs),
+                                   mean=0.0,
+                                   stddev=self.stddev,
+                                   dtype=inputs.dtype)
+            return inputs + noise
+        return inputs
+
+    def get_config(self):
+        config = super(GaussianNoiseLayer, self).get_config()
+        config.update({'stddev': self.stddev})
+        return config

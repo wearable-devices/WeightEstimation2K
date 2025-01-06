@@ -772,6 +772,7 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
                                              # use_sensor_attention=False,
                                             scattering_type='old',
                                              final_activation='sigmoid',
+                                             add_noise=True,
 
                                              # apply_noise=True, stddev=0.1,
                                              optimizer='Adam', learning_rate=0.0016,
@@ -836,12 +837,15 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
     # x_max = K.max(x, axis=1)
     # x = K.concatenate([K.expand_dims(x_min, axis=2), K.expand_dims(x_mean, axis=2),
     #                            K.expand_dims(x_max, axis=2)], axis=2)
+
+    if add_noise:
+        x = GaussianNoiseLayer(stddev=0.1)(x)
     x = keras.layers.Dense(units, activation=dense_activation)(x)
     # x = keras.layers.Flatten()(x)
 
 
     # x = keras.layers.Dense(units, activation=dense_activation, name='dense_1')(x)
-    x = keras.layers.Dense(units, activation=dense_activation)(x)
+    # x = keras.layers.Dense(units, activation=dense_activation)(x)
 
 
 
@@ -857,7 +861,8 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
         model_loss = get_loss(loss)
 
         model.compile(loss= [model_loss,
-                             ProtoLoss(number_of_persons=4, proto_meaning='weight')],
+                             None#ProtoLoss(number_of_persons=4, proto_meaning='weight')
+                             ],
                       loss_weights=[ loss_balance,  1 - loss_balance],
                       metrics=
                           [['mae', 'mse'], None],

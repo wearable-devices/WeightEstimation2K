@@ -7,6 +7,8 @@ from utils.get_data import get_windowed_data_from_file, get_weight_file_from_dir
 import  tensorflow as tf
 from utils.maps import apply_projection_to_dict
 from utils.plotting_functions import plot_movie_tensors, plot_heatmap_tensors, snc_scat_all, plot_feature_space
+from pathlib import Path
+from datetime import datetime
 
 
 def get_scattering_transform(snc1_framed,snc2_framed,snc3_framed, type='old'):
@@ -32,39 +34,50 @@ def get_scattering_transform(snc1_framed,snc2_framed,snc3_framed, type='old'):
 
 if __name__ == "__main__":
     SENSOR_NUM = 2
-    file_path = '/home/wld-algo-6/DataCollection/Data/Daniel/Train/Daniel_1_weight_500_0_Leaning_M.csv'
+    # file_path = '/home/wld-algo-6/DataCollection/Data/Daniel/Train/Daniel_1_weight_500_0_Leaning_M.csv'
+
+    #create dir for saved pictures
+    package_directory = Path(__file__).parent
+    save_path = package_directory / 'logs' / datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
+    save_path.mkdir(exist_ok=True)
+
+
     window_size_snc = 512
-    snc1_framed, snc2_framed, snc3_framed = get_windowed_data_from_file(file_path, window_size_snc)
-    snc1_data, snc2_data, snc3_data = process_normal_csv(file_path)
-    snc1_data = tf.cast(snc1_data, dtype=float32) / 2 ** 23
-    snc2_data = tf.cast(snc2_data, dtype=float32) / 2 ** 23
-    snc3_data = tf.cast(snc3_data, dtype=float32) / 2 ** 23
-    J_snc = 7
-    Q_snc =(2, 1)
-    undersampling = 1
-    snc1_framed = tf.cast(snc1_framed, dtype=float32)/2**23
-    snc2_framed = tf.cast(snc2_framed, dtype=float32)/2**23
-    snc3_framed = tf.cast(snc3_framed, dtype=float32)/2**23
+    # snc1_framed, snc2_framed, snc3_framed = get_windowed_data_from_file(file_path, window_size_snc)
+    # snc1_data, snc2_data, snc3_data = process_normal_csv(file_path)
+    # snc1_data = tf.cast(snc1_data, dtype=float32) / 2 ** 23
+    # snc2_data = tf.cast(snc2_data, dtype=float32) / 2 ** 23
+    # snc3_data = tf.cast(snc3_data, dtype=float32) / 2 ** 23
+    # J_snc = 7
+    # Q_snc =(2, 1)
+    # undersampling = 1
+    # snc1_framed = tf.cast(snc1_framed, dtype=float32)/2**23
+    # snc2_framed = tf.cast(snc2_framed, dtype=float32)/2**23
+    # snc3_framed = tf.cast(snc3_framed, dtype=float32)/2**23
 
-    sensors_framed = [snc1_framed, snc2_framed, snc3_framed]
-    snc_framed = sensors_framed[SENSOR_NUM-1]
-    scattered_snc1, scattered_snc11, scattered_snc2, scattered_snc22, scattered_snc3, scattered_snc33 = get_scattering_transform(snc1_framed,snc2_framed,snc3_framed)
-
-    tensors_for_movie = [snc1_framed, scattered_snc1, scattered_snc11]
-    names = [f'snc{1}_framed', 'scattered_1', 'scattered_11']
+    # sensors_framed = [snc1_framed, snc2_framed, snc3_framed]
+    # snc_framed = sensors_framed[SENSOR_NUM-1]
+    # scattered_snc1, scattered_snc11, scattered_snc2, scattered_snc22, scattered_snc3, scattered_snc33 = (
+    #     get_scattering_transform(snc1_framed,snc2_framed,snc3_framed, type='SEMG'))
+    #
+    # tensors_for_movie = [snc1_framed, scattered_snc1, scattered_snc11]
+    # names = [f'snc{1}_framed', 'scattered_1', 'scattered_11']
 
     # plot_heatmap_tensors([snc1_data, scattered_snc1[0], scattered_snc11[0]], names=names, title=None, normalize=False, save_path=None)
     # plot_movie_tensors(tensors_for_movie, names = names, im_min =None, im_max=None)
     # snc_scat_all(snc1_data, snc2_data, snc3_data, scattered_snc1, scattered_snc2, scattered_snc3,
     #           scattered_snc11, scattered_snc22, scattered_snc33)
 
-    scattered_snc1_mean =  tf.reduce_mean(scattered_snc1, axis=-1)
+    # scattered_snc1_mean =  tf.reduce_mean(scattered_snc1, axis=-1)
     persons_dict = get_weight_file_from_dir('/home/wld-algo-6/Data/Sorted', multiplier=1)#('/home/wld-algo-6/DataCollection/Data')
-    output_dict = mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_person=25, scattering_type='SEMG')
+    output_dict, std_dict = mean_scattering_snc(persons_dict, window_size=648, samples_per_weight_per_person=25, scattering_type='SEMG', undersampling=3)# 162
     proj_dict  = apply_projection_to_dict(output_dict, n_components=3, perplexity=10, random_state=42, proj='pca',
                              metric="euclidean")
 
-    plot_feature_space(proj_dict, num_of_components=3)
+
+    # plot_feature_space(proj_dict, num_of_components=3, save_path=save_path, img_name='pca_scattering')
+    plot_feature_space(std_dict, num_of_components=1, save_path=save_path, img_name='pca_scattering')
+    print(std_dict)
 
     ttt=1
 
