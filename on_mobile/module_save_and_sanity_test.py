@@ -71,25 +71,25 @@ if __name__ == "__main__":
 
     print('finished saving module to tflite')
 
-    # file_path = '/home/wld-algo-5/Data/Data_2023/AllCSVData/Train_edited/AvihooKeret/DragNDropSwipeFling/dragNdrop_1_cleaned.csv'
-    # snc1_data, snc2_data, snc3_data = process_file(file_path)
-    #
-    # valid_start_range = max(0, len(snc1_data) - SNC_WINDOW_SIZE + 1)
-    #
-    # start = np.random.randint(0, valid_start_range)
-    # snc_1_window = np.expand_dims(snc1_data[start:start + SNC_WINDOW_SIZE], axis=0)
-    # snc_2_window = np.expand_dims(snc2_data[start:start + SNC_WINDOW_SIZE], axis=0)
-    # snc_3_window = np.expand_dims(snc3_data[start:start + SNC_WINDOW_SIZE], axis=0)
-    #
-    # label = np.array([[1]])
-    #
-    # save_path = os.path.join(log_dir, 'weights_before')
-    # m.save(save_path)
-    #
-    # for _ in range(100):
-    #     m.train(snc1=snc_1_window, snc2=snc_2_window, snc3=snc_3_window, y=[label, label, label, label])
-    #
-    # save_path = os.path.join(log_dir, 'weights_after')
-    # m.save(save_path)
+    file_path = '/home/wld-algo-6/Data/Sorted/Leeor/weight_estimation/Train/Leeor_1_weight_0_0_Leaning_M.csv'
+    snc1_data, snc2_data, snc3_data = process_file(file_path)
 
-    # m.restore(save_path)
+    valid_start_range = max(0, len(snc1_data) - SNC_WINDOW_SIZE + 1)
+
+    start = np.random.randint(0, valid_start_range)
+    snc_1_window = np.expand_dims(snc1_data[start:start + SNC_WINDOW_SIZE], axis=0)
+    snc_2_window = np.expand_dims(snc2_data[start:start + SNC_WINDOW_SIZE], axis=0)
+    snc_3_window = np.expand_dims(snc3_data[start:start + SNC_WINDOW_SIZE], axis=0)
+
+    label = np.array([[0]])
+
+    save_path = os.path.join(log_dir, 'weights_before')
+    m.save(save_path)
+
+    for _ in range(100):
+        m.train(snc1=snc_1_window, snc2=snc_2_window, snc3=snc_3_window, y=label)#[label, label, label, label])
+
+    save_path = os.path.join(log_dir, 'weights_after')
+    m.save(save_path)
+
+    m.restore(save_path)
