@@ -1,4 +1,4 @@
-import keras.src.ops
+# import keras.src.ops
 import tensorflow as tf
 import pandas as pd
 import re
@@ -204,11 +204,11 @@ def mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_pe
                         # scattered_snc3_mean = tfp.stats.percentile(scattered_snc3, 50.0, axis=-1)
 
                         fused_sensors = tf.concat([scattered_snc1_mean, scattered_snc2_mean, scattered_snc3_mean], axis=-1)
-                        fused_sensors = tf.concat([scattered_snc2_mean], axis=-1)
+                        # fused_sensors = tf.concat([scattered_snc3_mean], axis=-1)
 
                         # Calculate global std dev (single value) for sensor 2
                         global_std = tf.math.reduce_std(scattered_snc2_mean).numpy()
-                        std_per_dimension = tf.math.reduce_std(scattered_snc2_mean, axis=0)[1]
+                        std_per_dimension = tf.math.reduce_std(scattered_snc2_mean, axis=0)[11]
 
                         output_dict[person+contact+'_'+phase][weight] = fused_sensors
 

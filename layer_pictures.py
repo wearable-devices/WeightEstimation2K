@@ -75,7 +75,7 @@ if __name__ == "__main__":
                              metric="euclidean")
 
 
-    # plot_feature_space(proj_dict, num_of_components=3, save_path=save_path, img_name='pca_scattering')
+    # plot_feature_space(proj_dict, num_of_components=3, save_path=save_path, img_name='pca_scattering_all_sensors')
     plot_feature_space(std_dict, num_of_components=1, save_path=save_path, img_name='pca_scattering')
     print(std_dict)
 

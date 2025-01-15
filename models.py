@@ -4,7 +4,7 @@ from oauthlib.uri_validate import query
 from scipy.constants import value
 
 from custom.layers import *
-import keras.ops as K
+# import keras.ops as K
 import keras
 from custom.losses import *
 from utils.special_functions import  find_max_sigma
@@ -551,7 +551,7 @@ def create_early_fusion_weight_estimation_model(window_size_snc=306, apply_tfp=F
 
 def mean_time_sensor_image(sensor_1_image):
 
-    x_mean = K.mean(sensor_1_image, axis=1)
+    x_mean = tf.reduce_mean(sensor_1_image, axis=1)# K.mean(sensor_1_image, axis=1)
 
 
 
@@ -761,6 +761,15 @@ def create_one_sensors_weight_estimation_model(sensor_num=2, window_size_snc=306
     return model
 
 
+class DummyLoss(keras.losses.Loss):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def call(self, y_true, y_pred):
+        return 0.0 * keras.backend.mean(y_pred)
+
+
+
 def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
                                              J_snc=5, Q_snc=(2, 1),
                                              undersampling=4.8,
@@ -825,22 +834,22 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
             S_snc3 = scattered_snc3
 
     all_sensors = [S_snc1,S_snc2,S_snc3]
-    x = all_sensors[sensor_num-1]
+    if sensor_num == 'all':
+        x = keras.layers.Concatenate(axis=2, name='sensor_oncatenate')(all_sensors)
+    else:
+        x = all_sensors[sensor_num-1]
 
     # Apply Time attention
     if use_attention:
         for _ in range(attention_layers_for_one_sensor):
             x = keras.layers.MultiHeadAttention(num_heads=3,key_dim=key_dim_for_time_attention)(query=x,key = x,value = x)
     x = mean_time_sensor_image(x)
-    # x_mean = K.mean(x, axis=1)
-    # x_min = K.min(x, axis=1)
-    # x_max = K.max(x, axis=1)
-    # x = K.concatenate([K.expand_dims(x_min, axis=2), K.expand_dims(x_mean, axis=2),
-    #                            K.expand_dims(x_max, axis=2)], axis=2)
+
 
     if add_noise:
         x = GaussianNoiseLayer(stddev=0.1)(x)
-    x = keras.layers.Dense(units, activation=dense_activation)(x)
+    x = keras.layers.Dense(units, activation=dense_activation, name='dense_1')(x)
+    x = keras.layers.Dense(units, activation=dense_activation, name='dense_2')(x)
     # x = keras.layers.Flatten()(x)
 
 
@@ -849,25 +858,41 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
 
 
 
-    out = [(max_weight) * keras.layers.Dense(1, activation=final_activation, name='final_dense_1')(x), x]
-
+    # out = [(max_weight) * keras.layers.Dense(1, activation=final_activation, name='final_dense_1')(x), x]
+    out_0 = (max_weight) * keras.layers.Dense(1, activation=final_activation, name='final_dense_1')(x)
+    # out_1 = keras.layers.Dense(units, name='embedding_output')(x)  # Give embedding a specific shape
 
     inputs = {'snc_1': input_layer_snc1, 'snc_2': input_layer_snc2, 'snc_3': input_layer_snc3}
     model = keras.Model(inputs=inputs,
-                           outputs=out
-                           )
+                        outputs=out_0
+                        )
+
     if compile:
         opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
         model_loss = get_loss(loss)
 
-        model.compile(loss= [model_loss,
-                             None#ProtoLoss(number_of_persons=4, proto_meaning='weight')
-                             ],
-                      loss_weights=[ loss_balance,  1 - loss_balance],
-                      metrics=
-                          [['mae', 'mse'], None],
+        # losses = {
+        #     'out_weight': model_loss,
+        #     'out_embd': DummyLoss()  # instead of None
+        # }
+
+        # loss_weights = {
+        #     'out_weight': loss_balance,
+        #     'out_embd': 1 - loss_balance
+        # }
+
+        # metrics = {
+        #     'out_weight': ['mae', 'mse'],
+        #     'out_embd': None
+        # }
+
+        model.compile(loss=model_loss,
+                      # loss_weights=loss_weights,
+                      metrics=['mae', 'mse'],
                       optimizer=opt,
                       run_eagerly=True)
+
+
 
 
     return model

@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 from kymatio.scattering1d.filter_bank import scattering_filter_factory
-import keras.ops as K
+# import keras.ops as K
 import keras
 import matplotlib.pyplot as plt
 
@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 @keras.utils.register_keras_serializable(package='weight_estimation', name='ScatteringTimeDomain')
 
 class ScatteringTimeDomain(keras.layers.Layer):
-    # Please help me implement the second layer as you suggested
     def __init__(self, J, Q, undersampling, max_order, support=None, sigma_phi=None, dc_component=False, **kwargs):
         super(ScatteringTimeDomain, self).__init__(**kwargs)
         self.J = J

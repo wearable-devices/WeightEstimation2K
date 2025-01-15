@@ -1,5 +1,5 @@
 import keras
-import keras.ops as K
+# import keras.ops as K
 # custom metric to track sigma
 class SigmaMetric(keras.metrics.Metric):
     def __init__(self, name='sigma_value', **kwargs):

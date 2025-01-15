@@ -1,12 +1,14 @@
 import tensorflow as tf
 import os
-from on_mobile.on_device_training import OnDeviceModel
-from training_playground.models import create_attention_weight_estimation_model
-from training_playground.constants import *
+# from on_mobile.on_device_training import OnDeviceModel
+# from training_playground.models import create_attention_weight_estimation_model
+# from training_playground.constants import *
 from pathlib import Path
 from datetime import datetime
 import numpy as np
 from db_generators.get_db import process_file
+
+SNC_WINDOW_SIZE = 648
 
 def logging_dirs():
     package_directory = Path(__file__).parent.parent
@@ -20,6 +22,7 @@ def logging_dirs():
 
 if __name__ == "__main__":
     model_path= os.path.join('/home/wld-algo-5/Production/WeightEstimation/logs/11-09-2024-15-01-35', 'snc_weight_estimation_model.tflite')
+
     interpreter = tf.lite.Interpreter(model_path=model_path)
     # Get signature list
     signatures = interpreter.get_signature_list()
@@ -55,3 +58,5 @@ if __name__ == "__main__":
     snc_3_window = np.array(np.expand_dims(snc3_data[start:start + SNC_WINDOW_SIZE], axis=0), dtype=np.float32)
     output = signature_runner(snc_1=snc_1_window,snc_2=snc_2_window, snc_3=snc_3_window)
     print(output)
+
+    # Do the same in keras (run the model on the same windows). Compare model predictions

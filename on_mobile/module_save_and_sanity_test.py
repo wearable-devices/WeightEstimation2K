@@ -1,12 +1,17 @@
 import tensorflow as tf
 import os
-from on_mobile.on_device_training import OnDeviceModel
-from training_playground.models import create_attention_weight_estimation_model
-from training_playground.constants import *
+from on_mobile.on_device_module import OnDeviceModel
+# from training_playground.models import create_attention_weight_estimation_model
+# from training_playground.constants import *
 from pathlib import Path
 from datetime import datetime
 import numpy as np
 from db_generators.get_db import process_file
+import keras
+from custom.layers import SEMGScatteringTransform
+
+SNC_WINDOW_SIZE = 648
+
 
 def logging_dirs():
     package_directory = Path(__file__).parent.parent
@@ -19,10 +24,23 @@ def logging_dirs():
     return logs_root_dir, log_dir
 
 if __name__ == "__main__":
-    ogs_root_dir, log_dir = logging_dirs()
+    logs_root_dir, log_dir = logging_dirs()
 
     SAVED_MODEL_DIR = "saved_model"
-    m = OnDeviceModel()
+    model_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/15-01-2025-11-35-38/trials/trial_0/initial_pre_trained_model.keras'
+    # FOR DEBUG
+    # custom_objects = {
+    #     'SEMGScatteringTransform': SEMGScatteringTransform,
+    # }
+    #
+    # model = keras.models.load_model(
+    #     model_path,
+    #     custom_objects=custom_objects,
+    #     compile=False,
+    #     safe_mode=False
+    # )
+
+    m = OnDeviceModel(model_path)
     tf.saved_model.save(
         m,
         SAVED_MODEL_DIR,
@@ -51,26 +69,27 @@ if __name__ == "__main__":
     with open(tflite_model_path, "wb") as f:
         f.write(tflite_model)
 
+    print('finished saving module to tflite')
 
-    file_path = '/home/wld-algo-5/Data/Data_2023/AllCSVData/Train_edited/AvihooKeret/DragNDropSwipeFling/dragNdrop_1_cleaned.csv'
-    snc1_data, snc2_data, snc3_data = process_file(file_path)
-
-    valid_start_range = max(0, len(snc1_data) - SNC_WINDOW_SIZE + 1)
-
-    start = np.random.randint(0, valid_start_range)
-    snc_1_window = np.expand_dims(snc1_data[start:start + SNC_WINDOW_SIZE], axis=0)
-    snc_2_window = np.expand_dims(snc2_data[start:start + SNC_WINDOW_SIZE], axis=0)
-    snc_3_window = np.expand_dims(snc3_data[start:start + SNC_WINDOW_SIZE], axis=0)
-
-    label = np.array([[1]])
-
-    save_path = os.path.join(log_dir, 'weights_before')
-    m.save(save_path)
-
-    for _ in range(100):
-        m.train(snc1=snc_1_window, snc2=snc_2_window, snc3=snc_3_window, y=[label, label, label, label])
-
-    save_path = os.path.join(log_dir, 'weights_after')
-    m.save(save_path)
+    # file_path = '/home/wld-algo-5/Data/Data_2023/AllCSVData/Train_edited/AvihooKeret/DragNDropSwipeFling/dragNdrop_1_cleaned.csv'
+    # snc1_data, snc2_data, snc3_data = process_file(file_path)
+    #
+    # valid_start_range = max(0, len(snc1_data) - SNC_WINDOW_SIZE + 1)
+    #
+    # start = np.random.randint(0, valid_start_range)
+    # snc_1_window = np.expand_dims(snc1_data[start:start + SNC_WINDOW_SIZE], axis=0)
+    # snc_2_window = np.expand_dims(snc2_data[start:start + SNC_WINDOW_SIZE], axis=0)
+    # snc_3_window = np.expand_dims(snc3_data[start:start + SNC_WINDOW_SIZE], axis=0)
+    #
+    # label = np.array([[1]])
+    #
+    # save_path = os.path.join(log_dir, 'weights_before')
+    # m.save(save_path)
+    #
+    # for _ in range(100):
+    #     m.train(snc1=snc_1_window, snc2=snc_2_window, snc3=snc_3_window, y=[label, label, label, label])
+    #
+    # save_path = os.path.join(log_dir, 'weights_after')
+    # m.save(save_path)
 
     # m.restore(save_path)

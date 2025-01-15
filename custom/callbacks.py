@@ -2,11 +2,11 @@ import os
 import tensorflow as tf
 import numpy as np
 import plotly.graph_objects as go
-from filterpy.kalman import predict
+# from filterpy.kalman import predict
 from numpy.core.records import record
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-import keract
+# import keract
 from tensorflow import float32
 from tensorflow.keras.callbacks import ModelCheckpoint
 import plotly.io as pio
@@ -21,7 +21,7 @@ import keras
 import matplotlib.pyplot as plt
 
 # from stam import data_mode
-import keras.ops as K
+# import keras.ops as K
 
 # from stam import output_dict
 from utils.maps import filter_dict_by_keys
@@ -96,8 +96,11 @@ class FeatureSpacePlotCallback(keras.callbacks.Callback):
 
     def calc_feature_space(self):
         """ Calculate and project the feature space from model layer outputs for each person and label.  """
-
-        window_size = self.model.input['snc_1'].shape[-1]
+        model_inp = self.model.input
+        if isinstance(model_inp, dict):
+            window_size = model_inp['snc_1'].shape[-1]
+        else:
+            window_size = model_inp[0].shape[-1]
 
         if len(self.model.inputs) == 7:  # model has a labeled input
             samples_per_weight = int(self.model.inputs[3].shape[
