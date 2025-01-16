@@ -138,7 +138,7 @@ def objective(trial):
                                                     'Q_snc': (2, 1),
                                                     'undersampling': 3,#trial.suggest_float('undersampling', 2, 4, step=0.2),#4.8,
                                                     'scattering_max_order': 1,
-                                                    'units': 21,#trial.suggest_int('units', 4, 12), #9
+                                                    'units': trial.suggest_int('units', 4, 12), #9 21
                                                     'dense_activation': 'relu',#trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
                                                     'use_attention': False,#True,# trial.suggest_categorical('use_attention', [True, False ]),
                                                     'key_dim_for_time_attention':5,#trial.suggest_int('key_dim_for_time_attention', 4, 12),#5,
@@ -226,6 +226,7 @@ def objective(trial):
         attention_snc_model_parameters_dict['max_weight'] = 2.1#max(train_dict[person].keys()) + 0.5
 
         model_snc_path = initial_model_path
+        # custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain}
         custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain}
         model = keras.models.load_model(model_snc_path, custom_objects=custom_objects,
                                            compile=True,

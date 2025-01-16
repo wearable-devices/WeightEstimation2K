@@ -39,7 +39,7 @@ def apply_projection_to_dict(input_dict, n_components=2, perplexity=10, random_s
             new_dict[person][label] = tf.convert_to_tensor(projected_predictions[start_idx:end_idx], dtype=tf.float32)
             start_idx = end_idx
 
-    return new_dict
+    return new_dict, projection
 
 
 def filter_dict_by_keys(original_dict, keys_list):

@@ -50,6 +50,7 @@ if __name__ == "__main__":
 
     # Run the restore function
     file_path = '/home/wld-algo-6/Data/Sorted/Leeor/weight_estimation/Train/Leeor_1_weight_0_0_Leaning_M.csv'
+    file_path = '/home/wld-algo-6/Data/Sorted/Leeor/weight_estimation/Train/Leeor_1_weight_500_0_Leaning_M.csv'
     snc1_data, snc2_data, snc3_data = process_file(file_path)
 
     valid_start_range = max(0, len(snc1_data) - SNC_WINDOW_SIZE + 1)

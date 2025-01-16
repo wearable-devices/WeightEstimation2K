@@ -3,6 +3,10 @@ from fontTools.ttLib.tables.S_T_A_T_ import table_S_T_A_T_
 from oauthlib.uri_validate import query
 from scipy.constants import value
 
+from optimizers.adabelief import AdaBelief
+
+
+
 from custom.layers import *
 # import keras.ops as K
 import keras
@@ -18,6 +22,13 @@ def get_optimizer(optimizer = 'LAMB',learning_rate=0.001, weight_decay=0.0):
         opt = tf.optimizers.Adam(learning_rate=learning_rate, clipnorm=1.0)
     elif optimizer == 'SGD':
         opt = tf.optimizers.SGD(learning_rate=learning_rate)
+    elif optimizer == 'AdaBelief'  :
+        opt = AdaBelief(
+            learning_rate=1e-3,
+            weight_decay=1e-2,
+            rectify=True,
+            decoupled_decay=True
+        )
     else:
         opt = optimizer
 
@@ -551,7 +562,11 @@ def create_early_fusion_weight_estimation_model(window_size_snc=306, apply_tfp=F
 
 def mean_time_sensor_image(sensor_1_image):
 
-    x_mean = tf.reduce_mean(sensor_1_image, axis=1)# K.mean(sensor_1_image, axis=1)
+    # x_mean = tf.reduce_mean(sensor_1_image, axis=1, name='mean_layer')# K.mean(sensor_1_image, axis=1)
+    x_mean = keras.layers.Lambda(
+        lambda x: tf.reduce_mean(x, axis=1),
+        name='mean_layer'
+    )(sensor_1_image)
 
 
 
@@ -835,7 +850,7 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
 
     all_sensors = [S_snc1,S_snc2,S_snc3]
     if sensor_num == 'all':
-        x = keras.layers.Concatenate(axis=2, name='sensor_oncatenate')(all_sensors)
+        x = keras.layers.Concatenate(axis=2, name='sensor_concatenate')(all_sensors)
     else:
         x = all_sensors[sensor_num-1]
 
