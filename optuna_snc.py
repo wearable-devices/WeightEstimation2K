@@ -14,6 +14,7 @@ from db_generators.generators import MultiInputGenerator, convert_generator_to_d
 from utils.get_data import get_weight_file_from_dir
 from constants import *
 from custom.callbacks import *
+from custom.heatmap_callback import HeatmapMeanPlotCallback
 # from db_generators.create_person_dict import *
 import keras
 from keras.callbacks import ModelCheckpoint
@@ -52,7 +53,7 @@ def objective(trial):
     addition_weight_hp = 0#trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
     epoch_num =  30#40
     epoch_len = 10#5  # None
-    use_pretrained_model = True# trial.suggest_categorical('use_pretrained_model',[True, False])
+    use_pretrained_model = False# trial.suggest_categorical('use_pretrained_model',[True, False])
 
     # weight_loss_dict_0 = {weight: 1 for i, weight in enumerate([0, 1, 2, 4, 6, 8])}
     # weight_loss_dict_1 = {weight: (i + 1) / 6 for i, weight in enumerate([0, 1, 2, 4, 6, 8])}
@@ -184,7 +185,7 @@ def objective(trial):
     #                                 learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
     #                          compile=True
     #                          )
-    model = model_sensor_all
+    model = model_sensor_2
 
     model.summary()
     total_params, trainable_params, non_trainable_params = count_parameters(model)
@@ -258,11 +259,12 @@ def objective(trial):
             #                          metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
             #                          num_of_components=3, samples_per_label_per_person=10, phase='test', task='weight_estimation'),
             #
-            FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='final_dense_1', data_mode='Test', proj='none',
-                                     metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
-                                     num_of_components=1, samples_per_label_per_person=10, phase='test'),
+            # FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='final_dense_1', data_mode='Test', proj='none',
+            #                          metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
+            #                          num_of_components=1, samples_per_label_per_person=10, phase='test'),
 
-
+            HeatmapMeanPlotCallback( trial_dir, layer_name='mean_layer',ind_0=0, ind_1 = 1, grid_x_min=-100, grid_x_max=100, grid_step = 0.125,
+                                     phase='test'),
             out_callback_test,
                      out_callback_train# out_2d_callback
 

@@ -1,7 +1,30 @@
 import keras
 from custom.layers import SEMGScatteringTransform
 import tensorflow as tf
-from sklearn.decomposition import PCA
+# from sklearn.decomposition import PCA
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+
+def plot_heat_tensor(tensor, title = 'Heatmap', colomn_index = 'Column Index', row_index = 'Row Index', plot_grid=True):
+    # x_values = np.arange(-48, 48, 0.5)  # example x coordinates
+    # y_values = np.arange(-48, 48, 0.5)
+    # Convert tensor to numpy if needed
+    if tf.is_tensor(tensor):
+        data = tensor.numpy()
+    else:
+        data = tensor
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(data, cmap='viridis',#xticklabels=x_values,  # Custom x-axis labels
+                annot=False)  # annot=True shows values in cells
+    plt.title(title)
+    plt.xlabel(colomn_index)
+    plt.ylabel(row_index)
+    # Add grid
+    if plot_grid:
+        plt.grid(True)
+    plt.show()
 
 
 def expand_2d_coordinates_to_nd(grid_2d, N, ind_0, ind_1, v=1.0):
@@ -70,8 +93,106 @@ def create_nd_grid(start: object = 0, stop: object = 10, step: object = 0.5, n_d
 
     # Create sequence once
     x = tf.range(start, stop, delta=step)
+    x = tf.cast(x, dtype=tf.float32)
     # Create n-dimensional meshgrid
     return tf.meshgrid(*[x] * n_dims, indexing='ij')
+
+
+"""
+A Keras callback that generates and plots heatmaps of model predictions on a 2D grid.
+This callback creates visualizations either at the end of training or periodically during testing.
+
+The callback works by:
+1. Creating a submodel from a specified mean layer to the output
+2. Generating a 2D grid of points and expanding it to the model's input dimension
+3. Making predictions on these grid points
+4. Visualizing the predictions as a heatmap
+
+Parameters:
+-----------
+trial_dir : str
+    Directory where plots will be saved
+layer_name : str, default='mean_layer'
+    Name of the layer from which to create the submodel
+ind_0 : int, default=0
+    First index for coordinate embedding in the expanded dimensions
+ind_1 : int, default=1
+    Second index for coordinate embedding in the expanded dimensions
+grid_x_min : float, default=-48
+    Minimum x value for the grid
+grid_x_max : float, default=48
+    Maximum x value for the grid
+grid_step : float, default=0.125
+    Step size for grid points
+phase : str, default='train'
+    Phase of training ('train' or 'test') determining when to generate plots
+
+Methods:
+--------
+on_epoch_begin(epoch, logs=None):
+    Updates the current epoch counter
+on_train_end(logs=None):
+    Generates heatmap at the end of training
+on_test_end(epoch, logs=None):
+    Generates heatmap every 5 epochs during testing phase
+plot_heatmap():
+    Creates the heatmap visualization of model predictions
+"""
+class HeatmapMeanPlotCallback(keras.callbacks.Callback):
+
+    def __init__(self, trial_dir, layer_name='mean_layer',
+                 ind_0=0, ind_1 = 1, grid_x_min=-48, grid_x_max=48, grid_step = 0.125, v = 0,
+                 phase='train'):
+        super(HeatmapMeanPlotCallback, self).__init__()
+
+        self.trial_dir = trial_dir
+        self.layer_name = layer_name
+        self.ind_0 = ind_0
+        self.ind_1 = ind_1
+        self.v = v
+        self.grid_x_min = grid_x_min
+        self.grid_x_max = grid_x_max
+        self.grid_step = grid_step
+        self.phase = phase
+
+        self.current_epoch = 0
+
+    def on_epoch_begin(self, epoch, logs=None):
+            self.current_epoch = epoch
+
+    def on_train_end(self, logs=None):
+        self.plot_heatmap()
+
+    def on_test_end(self,epoch, logs=None):
+        if (self.phase == 'test' or self.phase == 'Test') and  self.current_epoch % 5  == 0:
+            self.plot_heatmap()
+
+
+    def plot_heatmap(self):
+        # Get the layer that applies mean operation
+        mean_layer = self.model.get_layer(self.layer_name)
+        # Create submodel
+        submodel = keras.Model(
+            inputs=mean_layer.output,
+            outputs=self.model.output
+        )
+
+        # Create grid
+        x = create_nd_grid(start=self.grid_x_min, stop=self.grid_x_max, step=self.grid_step, n_dims=2)
+        grid_shape_0 = x[0].shape[0]
+        grid_points = tf.stack(x, axis=-1)
+        N = submodel.inputs[0].shape[1]  # 36
+        grid_slice = expand_2d_coordinates_to_nd(grid_points, N, self.ind_0, self.ind_1, v=self.v)
+        reshaped_grid_slice = tf.reshape(grid_slice, (-1, N))
+
+        # get model predictions
+        model_predictions = submodel(reshaped_grid_slice)
+
+        pred_on_grid = tf.reshape(model_predictions, (grid_shape_0, grid_shape_0, 1))
+        pred_on_grid = tf.squeeze(pred_on_grid, axis=-1)
+
+        # plot predictions
+        plot_heat_tensor(pred_on_grid, plot_grid=False)
 
 
 if __name__ == "__main__":
@@ -106,24 +227,25 @@ if __name__ == "__main__":
     # proj_dict, _ = apply_projection_to_dict(output_dict, n_components=2, perplexity=10, random_state=42, proj='none',
     #                                            metric="euclidean")
 
-    x1 = tf.range(start=0, limit=10, delta=0.5, dtype=None, name='range')
-    x2 = tf.range(start=0, limit=10, delta=0.5, dtype=None, name='range')
-    x3 = tf.range(start=0, limit=10, delta=0.5, dtype=None, name='range')
-    x4 = tf.range(start=0, limit=10, delta=0.5, dtype=None, name='range')
-    X,Y, Z, T = tf.meshgrid(x1,x2, x3, x4)
-
-    print('x', X.shape)
-
-    x = create_nd_grid(start=0, stop=3, step=1.0, n_dims=2)
+    # Create grid
+    x = create_nd_grid(start=-48, stop=48, step=0.125, n_dims=2)
+    grid_shape_0 =x[0].shape[0]
     grid_points = tf.stack(x, axis=-1)
-    # print(grid_points)
     ind_0 = 0
     ind_1 = 1
-
     N = submodel.inputs[0].shape[1] #36
+    grid_slice = expand_2d_coordinates_to_nd(grid_points, N, ind_0, ind_1, v=-2.0)
+    reshaped_grid_slice = tf.reshape(grid_slice, (-1, N))
 
-    grid_slice = expand_2d_coordinates_to_nd(grid_points, N, ind_0, ind_1, v=0.0)
-    # print(grid_slice)
+    # get model predictions
+    model_predictions = submodel(reshaped_grid_slice)
+
+    pred_on_grid = tf.reshape(model_predictions, (grid_shape_0, grid_shape_0, 1))
+    pred_on_grid = tf.squeeze(pred_on_grid, axis=-1)
+
+    # plot predictions
+    plot_heat_tensor(pred_on_grid, plot_grid=False)
+
     ttt = 1
 
 
