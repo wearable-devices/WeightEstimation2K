@@ -4,6 +4,7 @@ from oauthlib.uri_validate import query
 from scipy.constants import value
 
 from optimizers.adabelief import AdaBelief
+from optimizers.adamp import AdamP
 
 
 
@@ -24,21 +25,31 @@ def get_optimizer(optimizer = 'LAMB',learning_rate=0.001, weight_decay=0.0):
         opt = tf.optimizers.SGD(learning_rate=learning_rate)
     elif optimizer == 'AdaBelief'  :
         opt = AdaBelief(
-            learning_rate=1e-3,
+            #learning_rate=1e-3,
             weight_decay=1e-2,
             rectify=True,
             decoupled_decay=True
+        )
+    elif optimizer == 'AdamP':
+        opt = AdamP(
+            learning_rate=1e-3,
+            weight_decay=1e-2,
+            delta=0.1,
+            wd_ratio=0.1,
+            nesterov=True
         )
     else:
         opt = optimizer
 
     return opt
 
-def get_loss(loss='mse'):
+def get_loss(loss='mse', delta=1.0):
     if loss == 'mse':
         loss = keras.losses.MeanSquaredError()
     elif loss == 'Huber':
-        loss = keras.losses.Huber()
+        loss = keras.losses.Huber(delta=delta)
+    elif loss == 'WeightedHuberLoss':
+        loss = WeightedHuberLoss(delta=delta)
     return loss
 
 def get_metric(metric='mae'):
@@ -568,6 +579,10 @@ def mean_time_sensor_image(sensor_1_image):
         name='mean_layer'
     )(sensor_1_image)
 
+    # x_max = keras.layers.Lambda(
+    #     lambda x: tf.reduce_max(x, axis=1),
+    #     name='max_layer'
+    # )(sensor_1_image)
 
 
     return x_mean
@@ -799,7 +814,8 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
                                              add_noise=True,
 
                                              # apply_noise=True, stddev=0.1,
-                                             optimizer='Adam', learning_rate=0.0016,
+                                             optimizer='Adam', loss_delta=1.0,
+                                              learning_rate=0.0016,
                                              weight_decay=0.0, max_weight=3.0, compile=True,
                                                loss = 'mse',
                                              loss_balance = 0.5
@@ -853,6 +869,7 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
         x = keras.layers.Concatenate(axis=2, name='sensor_concatenate')(all_sensors)
     else:
         x = all_sensors[sensor_num-1]
+        # x = tf.gather(x, [10, 11], axis=1)
 
     # Apply Time attention
     if use_attention:
@@ -864,7 +881,7 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
     if add_noise:
         x = GaussianNoiseLayer(stddev=0.1)(x)
     x = keras.layers.Dense(units, activation=dense_activation, name='dense_1')(x)
-    x = keras.layers.Dense(units, activation=dense_activation, name='dense_2')(x)
+    x = keras.layers.Dense(units//2, activation=dense_activation, name='dense_2')(x)
     # x = keras.layers.Flatten()(x)
 
 
@@ -884,7 +901,7 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
 
     if compile:
         opt = get_optimizer(optimizer=optimizer, learning_rate=learning_rate, weight_decay=weight_decay)
-        model_loss = get_loss(loss)
+        model_loss = get_loss(loss, delta=loss_delta)
 
         # losses = {
         #     'out_weight': model_loss,

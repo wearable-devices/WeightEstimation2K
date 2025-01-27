@@ -3,12 +3,13 @@ import tensorflow as tf
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-def apply_projection_to_dict(input_dict, n_components=2, perplexity=10, random_state=42, proj='tsne', metric="euclidean"):
+def apply_projection_to_dict(input_dict, n_components=2, perplexity=10, random_state=42, proj='tsne', metric="euclidean", coord_0=0,coord_1=1):
     """takes an input_dict
         {person:{label:tensor_of_predictions}}
         tensor of predictions is of shape (batch_size,smth)
         and takes a projection of all predictions and gets a new dictionary with
-        {person:{label:projected_predictions}}"""
+        {person:{label:projected_predictions}},
+        coord_0 and coord_1 used only in case of proj='none' """
     # Collect all predictions into a single array
     all_predictions = []
     for person, label_dict in input_dict.items():
@@ -25,7 +26,9 @@ def apply_projection_to_dict(input_dict, n_components=2, perplexity=10, random_s
         projection = PCA(n_components=n_components)
     # tsne = TSNE(n_components=n_components, perplexity=perplexity, random_state=random_state)
     if proj == 'none':
-        projected_predictions = all_predictions[:,:n_components]
+        # projected_predictions = all_predictions[:,:n_components]
+        projected_predictions = np.column_stack((all_predictions[:, coord_0], all_predictions[:, coord_1]))
+        projection = None
     else:
         projected_predictions = projection.fit_transform(all_predictions)
 

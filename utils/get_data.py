@@ -6,6 +6,7 @@ import os
 from custom.layers import ScatteringTimeDomain, SEMGScatteringTransform
 import tensorflow.keras as tf_keras
 #import tensorflow_probability as tfp
+import keras
 
 # def process_csv(file_path):
 #     # Read the CSV file
@@ -204,7 +205,7 @@ def mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_pe
                         # scattered_snc3_mean = tfp.stats.percentile(scattered_snc3, 50.0, axis=-1)
 
                         fused_sensors = tf.concat([scattered_snc1_mean, scattered_snc2_mean, scattered_snc3_mean], axis=-1)
-                        # fused_sensors = tf.concat([scattered_snc3_mean], axis=-1)
+                        fused_sensors = tf.concat([scattered_snc2_mean], axis=-1)
 
                         # Calculate global std dev (single value) for sensor 2
                         global_std = tf.math.reduce_std(scattered_snc2_mean).numpy()
@@ -212,7 +213,7 @@ def mean_scattering_snc(persons_dict, window_size=162, samples_per_weight_per_pe
 
                         output_dict[person+contact+'_'+phase][weight] = fused_sensors
 
-                        std_dict[person+contact+'_'+phase][weight] = keras.src.ops.expand_dims(keras.src.ops.expand_dims(std_per_dimension, axis=-1), axis=-1)
+                        # std_dict[person+contact+'_'+phase][weight] = keras.src.ops.expand_dims(keras.src.ops.expand_dims(std_per_dimension, axis=-1), axis=-1)
     return output_dict, std_dict
 
 

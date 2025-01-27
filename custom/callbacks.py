@@ -32,12 +32,27 @@ class SaveKerasModelCallback(keras.callbacks.Callback):
         self.save_path = save_path
         self.model_name = model_name
         self.phase= phase
+        self.best_model=None
+        self.best_model_metric = None
         os.makedirs(save_path, exist_ok=True)
 
     def on_epoch_end(self, epoch, logs=None):
         if self.phase=='test':
             self.model.save(os.path.join(self.save_path, self.model_name + str(epoch) + '.keras'), save_format='keras')
             print(f'Model saved to {self.save_path}')
+        if self.phase=='best':
+            # Get MAE from logs instead of running evaluate
+            mae_key = [key for key in logs.keys() if 'mae' in key.lower()][0]
+            current_mae = logs[mae_key]
+
+            # Save if it's the best model so far
+            if self.best_model_metric is None or current_mae < self.best_model_metric:
+                self.best_model = self.model
+                self.best_model_metric = current_mae
+                self.model.save(os.path.join(self.save_path,
+                                             self.model_name + str(epoch) + '.keras'),
+                                save_format='keras')
+                print(f'New best model (MAE: {current_mae:.4f}) saved to {self.save_path}')
 
     def on_train_end(self, logs=None):
         self.model.save(os.path.join(self.save_path, self.model_name + '.keras'), save_format='keras')
@@ -46,7 +61,7 @@ class SaveKerasModelCallback(keras.callbacks.Callback):
 
 class FeatureSpacePlotCallback(keras.callbacks.Callback):
     def __init__(self, persons_dict, trial_dir, layer_name, used_persons='all', proj='pca', metric="euclidean",
-                 num_of_components='3', considered_weights=[0, 0.5, 1,2], data_mode='all',
+                 num_of_components='3', considered_weights=[0, 0.5, 1, 2], data_mode='all',
                  samples_per_label_per_person=10, picture_name_prefix='name', phase='train',
                  task='weight_estimation'):
         super(FeatureSpacePlotCallback, self).__init__()

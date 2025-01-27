@@ -5,25 +5,60 @@ import tensorflow as tf
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+from utils.get_data import get_weight_file_from_dir
 
-def plot_heat_tensor(tensor, title = 'Heatmap', colomn_index = 'Column Index', row_index = 'Row Index', plot_grid=True):
-    # x_values = np.arange(-48, 48, 0.5)  # example x coordinates
-    # y_values = np.arange(-48, 48, 0.5)
-    # Convert tensor to numpy if needed
-    if tf.is_tensor(tensor):
-        data = tensor.numpy()
+
+def plot_heat_tensor(heat_tensor, point_tensors=None, colors=None, title='Heatmap',
+                     x_min=-48, x_max=48, step=0.5,  # Add coordinate bounds
+                     column_index='Column Index', row_index='Row Index', plot_grid=True):
+    # Convert heat tensor to numpy if needed
+    if tf.is_tensor(heat_tensor):
+        data = heat_tensor.numpy()
     else:
-        data = tensor
+        data = heat_tensor
 
+    # Create coordinate arrays
+    x_coords = np.arange(x_min, x_max, step)
+    y_coords = np.arange(x_min, x_max, step)
+
+    # Create the figure and plot heatmap
     plt.figure(figsize=(10, 8))
-    sns.heatmap(data, cmap='viridis',#xticklabels=x_values,  # Custom x-axis labels
-                annot=False)  # annot=True shows values in cells
+    # sns.heatmap(data, cmap='viridis', annot=False)
+    # Plot heatmap with extent to specify the coordinate ranges
+    im = plt.imshow(data, extent=[x_min, x_max, x_min, x_max],
+               origin='lower', cmap='viridis')
+
+    # If point tensors are provided, plot them
+    if point_tensors is not None:
+        # If colors not provided, generate them
+        if colors is None:
+            colors = plt.cm.rainbow(np.linspace(0, 1, len(point_tensors)))
+
+        # Plot each tensor's points directly using their coordinates
+        for i, (tensor, color) in enumerate(zip(point_tensors, colors)):
+            if tf.is_tensor(tensor):
+                points = tensor.numpy()
+            else:
+                points = tensor
+
+            # Plot points using their actual coordinates
+            plt.scatter(points[:, 1], points[:, 0], c=[color],
+                        marker='x', s=50, alpha=0.7, label=f'Points {i + 1}')
+
     plt.title(title)
-    plt.xlabel(colomn_index)
+    plt.xlabel(column_index)
     plt.ylabel(row_index)
-    # Add grid
+
+    # Add grid if requested
     if plot_grid:
         plt.grid(True)
+
+    # Add legend if there are multiple point tensors
+    if point_tensors is not None and len(point_tensors) > 1:
+        plt.legend()
+    # Add colorbar with label
+    cbar = plt.colorbar(im)
+
     plt.show()
 
 
@@ -98,6 +133,40 @@ def create_nd_grid(start: object = 0, stop: object = 10, step: object = 0.5, n_d
     return tf.meshgrid(*[x] * n_dims, indexing='ij')
 
 
+def sample_from_dict(person_dict,window_size=648, considered_weights=[0,0.5,1,2], samples_per_label_per_person=10):
+    """ Calculate and project the feature space from model layer outputs for each person and label.  """
+
+    samples_dict = {person: {} for person in
+                         person_dict.keys()}  # {person: {weight: [] for weight in persons_dict[person]} for person in persons_dict.keys()}
+
+    for person, weight_dict in person_dict.items():
+        weight_dict_part = {weight: weight_dict[weight] for weight in considered_weights if
+                            weight in weight_dict}
+
+        for label, records in weight_dict_part.items():
+            # tf.print('used_recored', used_records)
+            if len(records)>0:
+                snc1_batch = []
+                snc2_batch = []
+                snc3_batch = []
+                for _ in range(samples_per_label_per_person):
+                    # Randomly select a file for this label
+                    file_idx = tf.random.uniform([], 0, len(records), dtype=tf.int32)
+                    file_data = records[file_idx.numpy()]
+                    # Generate a random starting point within the file
+                    start = tf.random.uniform([], 0, tf.shape(file_data['snc_1'])[0] - window_size + 1,
+                                              dtype=tf.int32)
+                    # Extract the window
+                    snc1_batch.append(file_data['snc_1'][start:start + window_size])
+                    snc2_batch.append(file_data['snc_2'][start:start + window_size])
+                    snc3_batch.append(file_data['snc_3'][start:start + window_size])
+                    # labels.append(label)
+
+                persons_input_data = [tf.stack(snc1_batch), tf.stack(snc2_batch), tf.stack(snc3_batch)]
+                samples_dict[person][label] = persons_input_data
+    return samples_dict
+
+
 """
 A Keras callback that generates and plots heatmaps of model predictions on a 2D grid.
 This callback creates visualizations either at the end of training or periodically during testing.
@@ -140,12 +209,14 @@ plot_heatmap():
 """
 class HeatmapMeanPlotCallback(keras.callbacks.Callback):
 
-    def __init__(self, trial_dir, layer_name='mean_layer',
-                 ind_0=0, ind_1 = 1, grid_x_min=-48, grid_x_max=48, grid_step = 0.125, v = 0,
+    def __init__(self, person_dict, trial_dir, layer_name='mean_layer',
+                 ind_0=0, ind_1 = 1, grid_x_min=-48, grid_x_max=48, grid_step = 0.125, v = 0, add_samples=False, person='Leeor',
                  phase='train'):
         super(HeatmapMeanPlotCallback, self).__init__()
 
         self.trial_dir = trial_dir
+        self.person = person
+        self.person_dict = person_dict
         self.layer_name = layer_name
         self.ind_0 = ind_0
         self.ind_1 = ind_1
@@ -153,6 +224,7 @@ class HeatmapMeanPlotCallback(keras.callbacks.Callback):
         self.grid_x_min = grid_x_min
         self.grid_x_max = grid_x_max
         self.grid_step = grid_step
+        self.add_samples = add_samples
         self.phase = phase
 
         self.current_epoch = 0
@@ -171,6 +243,7 @@ class HeatmapMeanPlotCallback(keras.callbacks.Callback):
     def plot_heatmap(self):
         # Get the layer that applies mean operation
         mean_layer = self.model.get_layer(self.layer_name)
+        window_size = self.model.input[0].shape[1] #648
         # Create submodel
         submodel = keras.Model(
             inputs=mean_layer.output,
@@ -191,13 +264,45 @@ class HeatmapMeanPlotCallback(keras.callbacks.Callback):
         pred_on_grid = tf.reshape(model_predictions, (grid_shape_0, grid_shape_0, 1))
         pred_on_grid = tf.squeeze(pred_on_grid, axis=-1)
 
-        # plot predictions
-        plot_heat_tensor(pred_on_grid, plot_grid=False)
+        if self.add_samples:
+            # # get a persons dict
+            # persons_dict = get_weight_file_from_dir('/home/wld-algo-6/Data/Sorted',
+            #                                         multiplier=1)  # ('/home/wld-algo-6/DataCollection/Data')
+            # Create layer_submodel
+            layer_submodel = keras.Model(
+                inputs=self.model.input,
+                outputs=mean_layer.output
+            )
+            sample_dict = sample_from_dict(self.person_dict, window_size=window_size, considered_weights=[0,0.5,1,2], samples_per_label_per_person=15)
+            user = self.person
+            user_0 = layer_submodel(sample_dict[user][0])
+            user_05 = layer_submodel(sample_dict[user][0.5])
+            user_1 = layer_submodel(sample_dict[user][1])
+            user_2 = layer_submodel(sample_dict[user][2])
+
+            user_0 = tf.gather(user_0, [self.ind_0, self.ind_1], axis=1)
+            user_05 = tf.gather(user_05, [self.ind_0, self.ind_1], axis=1)
+            user_1 = tf.gather(user_1, [self.ind_0, self.ind_1], axis=1)
+            user_2 = tf.gather(user_2, [self.ind_0, self.ind_1], axis=1)
+
+            # List of point tensors
+            point_tensors = [user_0, user_05, user_1, user_2]
+
+            # Optional: define specific colors if you want
+            colors = ['red', 'pink', 'blue', 'green']  # or use None for automatic color generation
+
+            # Plot everything
+            plot_heat_tensor(pred_on_grid, x_min=self.grid_x_min, x_max=self.grid_x_max, step=self.grid_step, point_tensors=point_tensors,
+                             colors=colors)
+        else:
+            # plot predictions
+            plot_heat_tensor(pred_on_grid, plot_grid=False)
 
 
 if __name__ == "__main__":
     # take the model
     model_snc_path ='/home/wld-algo-6/Production/WeightEstimation2K/logs/16-01-2025-13-34-57/trials/trial_0/initial_pre_trained_model.keras'
+    model_snc_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/19-01-2025-15-10-19/trials/trial_0/initial_pre_trained_model.keras'
     custom_objects = {'SEMGScatteringTransform': SEMGScatteringTransform}
     model = keras.models.load_model(model_snc_path, custom_objects=custom_objects,
                                     compile=True,
@@ -228,11 +333,13 @@ if __name__ == "__main__":
     #                                            metric="euclidean")
 
     # Create grid
-    x = create_nd_grid(start=-48, stop=48, step=0.125, n_dims=2)
+    x_min = -0.001
+    x_max = 0.0016
+    x = create_nd_grid(start=x_min, stop=x_max, step=0.0001, n_dims=2)
     grid_shape_0 =x[0].shape[0]
     grid_points = tf.stack(x, axis=-1)
-    ind_0 = 0
-    ind_1 = 1
+    ind_0 = 10
+    ind_1 = 11
     N = submodel.inputs[0].shape[1] #36
     grid_slice = expand_2d_coordinates_to_nd(grid_points, N, ind_0, ind_1, v=-2.0)
     reshaped_grid_slice = tf.reshape(grid_slice, (-1, N))
@@ -244,8 +351,36 @@ if __name__ == "__main__":
     pred_on_grid = tf.squeeze(pred_on_grid, axis=-1)
 
     # plot predictions
-    plot_heat_tensor(pred_on_grid, plot_grid=False)
+    # plot_heat_tensor(pred_on_grid, plot_grid=False)
 
+    # get a persons dict
+    persons_dict = get_weight_file_from_dir('/home/wld-algo-6/Data/Sorted',
+                                            multiplier=1)  # ('/home/wld-algo-6/DataCollection/Data')
+    # Create layer_submodel
+    layer_submodel = keras.Model(
+        inputs=model.input,
+        outputs=mean_layer.output
+    )
+    sample_dict = sample_from_dict(persons_dict)
+    user = 'Leeor'
+    user_0 = layer_submodel(sample_dict[user][0])
+    user_05 = layer_submodel(sample_dict[user][0.5])
+    user_1 = layer_submodel(sample_dict[user][1])
+    user_2 = layer_submodel(sample_dict[user][2])
+
+    user_0 = tf.gather(user_0, [ind_0, ind_1], axis=1)
+    user_05 = tf.gather(user_05, [ind_0, ind_1], axis=1)
+    user_1 = tf.gather(user_1, [ind_0, ind_1], axis=1)
+    user_2 = tf.gather(user_2, [ind_0, ind_1], axis=1)
+
+    # List of point tensors
+    point_tensors = [user_0, user_05, user_1, user_2]
+
+    # Optional: define specific colors if you want
+    colors = ['red', 'pink','blue', 'green']  # or use None for automatic color generation
+
+    # Plot everything
+    plot_heat_tensor(pred_on_grid,x_min=x_min, x_max=x_max, step=0.0001, point_tensors=point_tensors, colors=colors)
     ttt = 1
 
 

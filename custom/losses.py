@@ -4,6 +4,71 @@ import keras
 from custom.layers import DistanceLayer
 # from keras.losses import Reduction
 
+class WeightedHuberLoss(keras.losses.Loss):
+    """
+    Custom loss function that weights the Huber loss based on prediction consistency.
+    For each unique label in a batch, it calculates the standard deviation of predictions
+    and weights the loss inversely proportional to this std.
+
+    Args:
+        delta (float): Huber loss delta parameter (threshold between L1 and L2 loss)
+        name (str): Name of the loss function
+    """
+
+    def __init__(self, delta=1.0, name='weighted_huber'):
+        super().__init__(name=name)
+        self.huber = tf.keras.losses.Huber(delta=delta, reduction=tf.keras.losses.Reduction.NONE)
+
+    def call(self, y_true, y_pred):
+        """
+        Calculate weighted Huber loss.
+
+        Args:
+            y_true: Ground truth values, shape (batch_size,)
+            y_pred: Predicted values, shape (batch_size,)
+
+        Returns:
+            tf.Tensor: Weighted mean Huber loss for the batch
+        """
+        # Ensure inputs are float32 and properly shaped
+        y_true = tf.cast(tf.reshape(y_true, [-1]), tf.float32)
+        y_pred = tf.cast(tf.reshape(y_pred, [-1]), tf.float32)
+
+        # Find unique labels in the batch
+        unique_labels, unique_idx, counts = tf.unique_with_counts(y_true)
+
+        # List to store losses for each label group
+        weighted_losses = []
+
+        # Process each unique label separately
+        for label in unique_labels:
+            # Create boolean mask for current label
+            mask = tf.equal(y_true, label)
+
+            # Extract predictions and true values for current label
+            label_preds = tf.boolean_mask(y_pred, mask)
+            label_true = tf.boolean_mask(y_true, mask)
+
+            # Calculate standard deviation of predictions for this label
+            std = tf.math.reduce_std(label_preds)
+
+            # Calculate mean Huber loss for this label group
+            label_loss = tf.reduce_mean(self.huber(label_true, label_preds))
+
+            # Weight loss by inverse of standard deviation
+            weight = 1.0 / (std + tf.keras.backend.epsilon())
+            weighted_label_loss = label_loss * weight
+
+            weighted_losses.append(weighted_label_loss)
+
+        # Stack losses from all label groups
+        all_losses = tf.stack(weighted_losses)
+
+        # Return mean loss across all label groups
+        return tf.reduce_mean(all_losses)
+
+
+
 class WeightedMeanSquaredError(keras.losses.Loss):
     def __init__(self, weight_dict, #reduction=Reduction.AUTO,
                  name="weighted_mean_squared_error"):

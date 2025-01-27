@@ -9,7 +9,7 @@ Apache-2.0 license
 """
 
 import tensorflow as tf
-from Note import nn
+# from Note import nn
 from keras.src.optimizers import optimizer
 import math
 

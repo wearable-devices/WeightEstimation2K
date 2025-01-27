@@ -20,6 +20,32 @@ import keras
 from keras.callbacks import ModelCheckpoint
 from models_dir.model_fusion import one_sensor_model_fusion
 
+
+def fit_and_take_the_best(inint_model, train_ds, val_ds, save_dir, number=0, model_name='', epochs=20):
+    print(f'fit_and_take_the_best for {model_name}')
+    save_best_model_sensor_1 = SaveKerasModelCallback(save_dir, model_name+'best', phase='best')
+    # best_model_1_path = os.path.join(trial_dir,'model_sensor_1_best' + str(epoch) + '.keras')
+    inint_model.fit(
+        train_ds,
+        batch_size=BATCH_SIZE,
+        callbacks=[save_best_model_sensor_1,
+                   ModelCheckpoint(
+                       filepath=os.path.join(save_dir,
+                                             f"pre_trained_model_trial_{number}__epoch_{{epoch:03d}}.weights.h5"),
+                       # Added .weights.h5
+                       verbose=1,
+                       save_weights_only=True,
+                       save_freq='epoch'),
+                   TensorBoard(log_dir=os.path.join(save_dir, 'tensorboard')),
+                   MetricsTrackingCallback()
+                   ],
+        epochs=epochs,
+        validation_data=val_ds,
+        verbose=1,
+    )
+    model = save_best_model_sensor_1.best_model
+    return model
+
 def cleanup_after_trial(callbacks):
     for callback in callbacks:
         if hasattr(callback, 'cleanup'):
@@ -53,7 +79,7 @@ def objective(trial):
     addition_weight_hp = 0#trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
     epoch_num =  30#40
     epoch_len = 10#5  # None
-    use_pretrained_model = False# trial.suggest_categorical('use_pretrained_model',[True, False])
+    use_pretrained_model = True# trial.suggest_categorical('use_pretrained_model',[True, False])
 
     # weight_loss_dict_0 = {weight: 1 for i, weight in enumerate([0, 1, 2, 4, 6, 8])}
     # weight_loss_dict_1 = {weight: (i + 1) / 6 for i, weight in enumerate([0, 1, 2, 4, 6, 8])}
@@ -64,93 +90,27 @@ def objective(trial):
 
     batch_size_np = 1024  # trial.suggest_int('batch_size', 512, 2048, step=512)
     # train_ds = train_ds.take(5)
-    attention_snc_model_parameters_dict = {'window_size_snc': snc_window_size_hp,
-                                           'apply_tfp': False,
-                                           'J_snc': 7,#trial.suggest_int('J_snc', 5, 7),  # 5,
-                                           'Q_snc': (2, 1),
-                                           'undersampling': 4.4,
-                                           'scattering_max_order':1,
-                                           'use_attention': False,
-                                           'attention_layers_for_one_sensor': 1,
-                                           # 'use_sensor_attention': trial.suggest_categorical('use_sensor_attention', [True, False]),
-                                           'use_sensor_ordering': True,
-                                           # trial.suggest_categorical('use_sensor_ordering', [True, False]),
-                                           'units': 6,#trial.suggest_int('units', 5, 10),  # 13,#15,#80,#
-                                           'dense_activation': 'linear',#trial.suggest_categorical('conv_activation', ['linear',  'relu', ]),# trial.suggest_categorical('conv_activation', ['tanh', 'sigmoid', 'relu', 'linear']),#'relu',
-                                           'use_time_ordering': True,
-                                           # trial.suggest_categorical('use_time_ordering', [True, False]),
-                                           'num_heads': 3,  # trial.suggest_int('num_heads', 3, 4),#4
-                                           'key_dim_for_snc': 3,  # trial.suggest_int('key_dim', 5, 20),#6
-                                           'key_dim_for_sensor_att': 16,
-                                           # trial.suggest_int('key_dim_for_sensor_att', 10, 20),#10,80
-                                           'num_sensor_attention_heads': 1,
-                                           # trial.suggest_int('num_sensor_attention_heads', 1, 5),#2
-                                           'final_activation': 'tanh',
-                                           # trial.suggest_categorical('final_activation', ['tanh', 'sigmoid']),
 
-                                           'use_probabilistic_app': False,  # True,
-                                           'prob_param': {'smpl_rate': 9,  # 49,
-                                                          'sigma_for_labels_prob': 0.4},
-                                           'apply_noise': False,
-                                           'max_weight': 2.1,
-                                           # 'stddev': 0.1,# trial.suggest_float('stddev', 0.0, 0.5, step=0.05),#0.1,
-                                           'optimizer': 'Adam',# trial.suggest_categorical('optimizer', ['LAMB', 'Adam']),#'LAMB',
-                                           'weight_decay': 0,# 0.01,#trial.suggest_float('weight_decay', 0.0, 0.1, step=0.01),
-                                           'learning_rate': 0.0016,
-                                           # 'normalization_factor': trial.suggest_float('normalization_factor', 1, 4, step=0.5),
-                                           # 'weight_loss_multipliers_dict': weight_loss_dicts[loss_dict_num_hp],
-                                           'use_weighted_loss': False,
-                                           'sensor_fusion': 'attention',# trial.suggest_categorical('sensor_fusion', ['early', 'attention', 'mean']),
-                                           }
-
-    attention_distr_snc_model_parameters_dict = {'window_size_snc': snc_window_size_hp,
-                                                 'scattering_type': 'old',#trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
-                                                 'J_snc': 7,  # trial.suggest_int('J_snc', 5, 7),  # 5,
-                                                 'Q_snc': (2, 1),
-                                                 'undersampling': 4.4,
-                                                 'scattering_max_order': 1,
-                                                 'use_attention': False,
-                                                 'attention_layers_for_one_sensor': 1,
-                                                 'use_sensor_ordering': True,
-                                                 'units': 6,
-                                                 'dense_activation': 'linear',
-                                                 'smpl_rate': 9,
-                                                 # trial.suggest_categorical('conv_activation', ['linear',  'relu', ]),# trial.suggest_categorical('conv_activation', ['tanh', 'sigmoid', 'relu', 'linear']),#'relu',
-                                                 'use_time_ordering': True,
-                                                 'num_heads': 3,
-                                                 'key_dim_for_snc': 3,
-                                                 'key_dim_for_sensor_att': 16,
-                                                 'num_sensor_attention_heads': 1,
-
-                                                 'max_sigma':1,#trial.suggest_float('max_sigma', 0.1, 1, step=0.1),
-                                                 'final_activation': 'sigmoid',
-                                                 'apply_noise': False,
-                                                 'max_weight': 2.1,
-                                                 'optimizer': 'Adam',
-                                                 'weight_decay': 0,
-                                                 'learning_rate': 0.0016,
-                                                 'loss_balance': 1,#trial.suggest_float('loss_balance', 0.0, 1, step=0.1),
-                                                 'loss_normalize': False,#trial.suggest_categorical('loss_normalize', [True, False]),
-                                                 'sensor_fusion': 'attention',
-                                                 }
 
     average_sensors_weight_estimation_model_dict = {'window_size_snc': snc_window_size_hp,
-                                                    'J_snc': 7,
-                                                    'Q_snc': (2, 1),
+                                                    'scattering_type': 'SEMG',# trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
+                                                        'J_snc': 7,
+                                                        'Q_snc': (2, 1),
                                                     'undersampling': 3,#trial.suggest_float('undersampling', 2, 4, step=0.2),#4.8,
                                                     'scattering_max_order': 1,
-                                                    'units': trial.suggest_int('units', 4, 12), #9 21
-                                                    'dense_activation': 'relu',#trial.suggest_categorical('dense_activation', ['linear',  'relu', ]),
-                                                    'use_attention': False,#True,# trial.suggest_categorical('use_attention', [True, False ]),
-                                                    'key_dim_for_time_attention':5,#trial.suggest_int('key_dim_for_time_attention', 4, 12),#5,
-                                                    'attention_layers_for_one_sensor': 2,#trial.suggest_int('key_dim_for_time_attention', 2, 3),
-                                                    'use_time_ordering': False,
-                                                    'scattering_type': 'SEMG',#trial.suggest_categorical('scattering_type', ['old',  'SEMG', ]),
+                                                    'units':12,# trial.suggest_int('units', 4, 12), #9 21
+                                                    'dense_activation': 'elu',#trial.suggest_categorical('dense_activation', ['linear',  'relu','tanh' ]),#'relu',#
+                                                    'use_attention': True,#trial.suggest_categorical('use_attention', [True, False ]),
+                                                        'key_dim_for_time_attention':10,#trial.suggest_int('key_dim_for_time_attention', 4, 12),#5,
+                                                        'attention_layers_for_one_sensor': 2,#trial.suggest_int('key_dim_for_time_attention', 2, 3),
+                                                        'use_time_ordering': False,
                                                     'final_activation': 'sigmoid',# trial.suggest_categorical('final_activation',['sigmoid', 'tanh']),
                                                     'add_noise': False,# trial.suggest_categorical('add_noise', [True, False ]),
-                                                    'optimizer': 'Adam', 'learning_rate': 0.016,#0.0016,
+                                                    'optimizer': 'Adam',#trial.suggest_categorical('optimizer',['Adam', 'AdaBelief']),
+                                                    'learning_rate': 0.016,#0.0016,
                                                     'weight_decay': 0.0, 'max_weight': max_weight+addition_weight_hp, 'compile': True,
-                                                    'loss': 'Huber',# trial.suggest_categorical('loss', ['Huber', 'mse'])
+                                                    'loss': 'Huber',# trial.suggest_categorical('loss', ['Huber', 'WeightedHuberLoss'])
+                                                    'loss_delta':trial.suggest_float('loss_delta', 0.5, 1.1, step=0.1),
                                                     # 'loss_balance': trial.suggest_float('loss_balance', 0.0, 1, step=0.1),
                                                      }
 
@@ -176,16 +136,30 @@ def objective(trial):
     model_sensor_all = one_sensors_weight_estimation_proto_model(sensor_num='all',
                                                                **average_sensors_weight_estimation_model_dict)
 
-    # fusion_type_tp = trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ]),
-    # model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
-    #                          fusion_type=fusion_type_tp,
-    #                          window_size_snc=snc_window_size_hp,
-    #                          trainable=True,
-    #                          optimizer=average_sensors_weight_estimation_model_dict['optimizer'],
-    #                                 learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
-    #                          compile=True
-    #                          )
-    model = model_sensor_2
+    train_ds = create_data_for_model(person_dict, snc_window_size_hp, batch_size_np, labels_to_balance, epoch_len,
+                                     used_persons=persons_for_train_initial_model, data_mode='Train', contacts=['M'])
+    val_ds = train_ds
+
+    model_sensor_1 = fit_and_take_the_best(model_sensor_1, train_ds, val_ds, trial_dir, number=trial.number,
+                                           model_name='model_sensor_1_best',epochs=20)
+    model_sensor_2 = fit_and_take_the_best(model_sensor_2, train_ds, val_ds, trial_dir, number=trial.number,
+                                           model_name='model_sensor_2_best', epochs=20)
+    model_sensor_3 = fit_and_take_the_best(model_sensor_3, train_ds, val_ds, trial_dir, number=trial.number,
+                                           model_name='model_sensor_3_best', epochs=20)
+
+
+    fusion_type_tp = 'attention'#trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ])
+    fused_layer_name = 'dense_1'#trial.suggest_categorical('fused_layer_name', ['mean_layer', 'dense_1', 'dense_2' ])
+    one_more_dense_hp = trial.suggest_categorical('one_more_dense', [True, False ])
+    model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
+                             fusion_type=fusion_type_tp, fused_layer_name = fused_layer_name,
+                             window_size_snc=snc_window_size_hp,
+                             trainable=True, one_more_dense = one_more_dense_hp,
+                             optimizer=average_sensors_weight_estimation_model_dict['optimizer'],
+                                    learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
+                             compile=True
+                             )
+    # model = model_sensor_2
 
     model.summary()
     total_params, trainable_params, non_trainable_params = count_parameters(model)
@@ -198,23 +172,9 @@ def objective(trial):
         print("Model configuration:")
         print(model.get_config())
 
-        model.fit(
-            train_ds,
-            batch_size=BATCH_SIZE,
-            callbacks=[ModelCheckpoint(
-                filepath=os.path.join(trial_dir,
-                                      f"pre_trained_model_trial_{trial.number}__epoch_{{epoch:03d}}.weights.h5"),
-                # Added .weights.h5
-                verbose=1,
-                save_weights_only=True,
-                save_freq='epoch'),
-                TensorBoard(log_dir=os.path.join(trial_dir, 'tensorboard')),
-                MetricsTrackingCallback()
-            ],
-            epochs=20,
-            validation_data=val_ds,
-            verbose=1,
-        )
+
+        model = fit_and_take_the_best(model, train_ds, val_ds, trial_dir, number=trial.number,
+                                           model_name='fused_model_best', epochs=20)
 
     initial_model_path = os.path.join(trial_dir, 'initial_pre_trained_model' + '.keras')
     model.save(initial_model_path, save_format='keras')
@@ -224,12 +184,12 @@ def objective(trial):
     personal_metrics_dict = {}
     for person in persons_for_test:
         print(f'Training on {person}')
-        attention_snc_model_parameters_dict['max_weight'] = 2.1#max(train_dict[person].keys()) + 0.5
+        # attention_snc_model_parameters_dict['max_weight'] = 2.1#max(train_dict[person].keys()) + 0.5
 
-        model_snc_path = initial_model_path
+        # model_snc_path = initial_model_path
         # custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain}
-        custom_objects = {'ScatteringTimeDomain': ScatteringTimeDomain}
-        model = keras.models.load_model(model_snc_path, custom_objects=custom_objects,
+        custom_objects = {'SEMGScatteringTransform': SEMGScatteringTransform}
+        model = keras.models.load_model(initial_model_path, custom_objects=custom_objects,
                                            compile=True,
                                            safe_mode=False)
 
@@ -263,8 +223,8 @@ def objective(trial):
             #                          metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
             #                          num_of_components=1, samples_per_label_per_person=10, phase='test'),
 
-            HeatmapMeanPlotCallback( trial_dir, layer_name='mean_layer',ind_0=0, ind_1 = 1, grid_x_min=-100, grid_x_max=100, grid_step = 0.125,
-                                     phase='test'),
+            # HeatmapMeanPlotCallback(person_dict, trial_dir, layer_name='mean_layer',ind_0=10, ind_1 = 11, grid_x_min=-0.001, grid_x_max=0.002, grid_step = 0.00005,
+            #                          phase='test', add_samples=True, person=person),
             out_callback_test,
                      out_callback_train# out_2d_callback
 
@@ -329,25 +289,7 @@ def objective(trial):
         # file.write("\n")
         file.write(f'personal second stage accuracy {personal_metrics_dict}')
         file.write("\n")
-        # file.write(f'max val loss {max([metrics['mse'] for person,metrics in personal_metrics_dict.items()])}')
-        # file.write("\n")
         file.write("\n")
-        file.write("\n")
-
-    # max_val_loss = max(last_val_losses)
-    # mean_val_loss = sum(last_val_losses) / len(last_val_losses)
-    # mean_val_mse = sum(last_mse) / len(last_mse)
-
-    # Clean up after trial
-    # cleanup_after_trial([FeatureSpacePlotCallback(test_dict, trial_dir, layer_name='time_attention_for_sensor_1', proj='pca',
-    #                                  metric="euclidean", picture_name=person,
-    #                                  num_of_components=2, samples_per_label_per_person=10, phase='train'),
-    #         FeatureSpacePlotCallback(test_dict, trial_dir, layer_name='tf.math.reduce_mean', proj='pca',
-    #                                  metric="euclidean", picture_name=person,
-    #                                  num_of_components=2, samples_per_label_per_person=10, phase='train'),
-    #         OutputPlotCallback( test_dict, trial_dir,
-    #               samples_per_label_per_person=10, picture_name=person,
-    #                             phase='train')])
 
     return mean_val_mae #max_val_mae#max_val_loss#mean_val_mse  # max_val_loss
 
@@ -375,10 +317,10 @@ if __name__ == "__main__":
                                       'Foad',
                                      'Asher2', ]
     persons_for_test = [ 'Leeor',
-                        'Liav','Itai',
+                        # 'Liav','Itai',
        #
-                                          'Lee',
-                         'Michael',
+                                         'Lee',
+                         # 'Michael',
                          #'Perry',
                    # 'Ofek',
        # 'Tom', #'Guy'

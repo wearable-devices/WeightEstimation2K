@@ -69,14 +69,15 @@ if __name__ == "__main__":
     #           scattered_snc11, scattered_snc22, scattered_snc33)
 
     # scattered_snc1_mean =  tf.reduce_mean(scattered_snc1, axis=-1)
+    num_of_components= 3
     persons_dict = get_weight_file_from_dir('/home/wld-algo-6/Data/Sorted', multiplier=1)#('/home/wld-algo-6/DataCollection/Data')
     output_dict, std_dict = mean_scattering_snc(persons_dict, window_size=648, samples_per_weight_per_person=25, scattering_type='SEMG', undersampling=3)# 162
-    proj_dict, proj  = apply_projection_to_dict(output_dict, n_components=3, perplexity=10, random_state=42, proj='pca',
-                             metric="euclidean")
+    proj_dict, proj  = apply_projection_to_dict(output_dict, n_components=num_of_components, perplexity=10, random_state=42, #proj='pca',
+                             metric="euclidean", proj='pca', coord_0=5, coord_1=6)
 
 
     # plot_feature_space(proj_dict, num_of_components=3, save_path=save_path, img_name='pca_scattering_all_sensors')
-    plot_feature_space(std_dict, num_of_components=1, save_path=save_path, img_name='pca_scattering')
+    plot_feature_space(proj_dict, num_of_components=num_of_components, save_path=save_path, img_name='pca_scattering')
     print(std_dict)
 
     ttt=1
