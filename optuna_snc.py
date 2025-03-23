@@ -110,7 +110,7 @@ def objective(trial):
                                                     'learning_rate': 0.016,#0.0016,
                                                     'weight_decay': 0.0, 'max_weight': max_weight+addition_weight_hp, 'compile': True,
                                                     'loss': 'Huber',# trial.suggest_categorical('loss', ['Huber', 'WeightedHuberLoss'])
-                                                    'loss_delta':trial.suggest_float('loss_delta', 0.5, 1.1, step=0.1),
+                                                    'loss_delta':1.2,#trial.suggest_float('loss_delta', 0.5, 1.1, step=0.1),
                                                     # 'loss_balance': trial.suggest_float('loss_balance', 0.0, 1, step=0.1),
                                                      }
 
@@ -149,8 +149,8 @@ def objective(trial):
 
 
     fusion_type_tp = 'attention'#trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ])
-    fused_layer_name = 'dense_1'#trial.suggest_categorical('fused_layer_name', ['mean_layer', 'dense_1', 'dense_2' ])
-    one_more_dense_hp = trial.suggest_categorical('one_more_dense', [True, False ])
+    fused_layer_name = trial.suggest_categorical('fused_layer_name', ['mean_layer', 'dense_1', 'dense_2' ])#'dense_1'#
+    one_more_dense_hp = False#trial.suggest_categorical('one_more_dense', [True, False ])
     model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
                              fusion_type=fusion_type_tp, fused_layer_name = fused_layer_name,
                              window_size_snc=snc_window_size_hp,
@@ -317,7 +317,7 @@ if __name__ == "__main__":
                                       'Foad',
                                      'Asher2', ]
     persons_for_test = [ 'Leeor',
-                        # 'Liav','Itai',
+                        'Liav','Itai',
        #
                                          'Lee',
                          # 'Michael',
