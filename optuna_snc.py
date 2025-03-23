@@ -21,24 +21,29 @@ from keras.callbacks import ModelCheckpoint
 from models_dir.model_fusion import one_sensor_model_fusion
 
 
-def fit_and_take_the_best(inint_model, train_ds, val_ds, save_dir, number=0, model_name='', epochs=20):
+def fit_and_take_the_best(inint_model, train_ds, val_ds, save_dir, number=0, model_name='', epochs=20, save_checkp=True):
     print(f'fit_and_take_the_best for {model_name}')
     save_best_model_sensor_1 = SaveKerasModelCallback(save_dir, model_name+'best', phase='best')
     # best_model_1_path = os.path.join(trial_dir,'model_sensor_1_best' + str(epoch) + '.keras')
-    inint_model.fit(
-        train_ds,
-        batch_size=BATCH_SIZE,
-        callbacks=[save_best_model_sensor_1,
-                   ModelCheckpoint(
+    save_checkpoint = ModelCheckpoint(
                        filepath=os.path.join(save_dir,
-                                             f"pre_trained_model_trial_{number}__epoch_{{epoch:03d}}.weights.h5"),
+                                             # f"pre_trained_model_trial_{number}__epoch_{{epoch:03d}}.weights.h5"),
+                                             f"{model_name}_trial_{number}__epoch_{{epoch:03d}}.weights.h5"),
                        # Added .weights.h5
                        verbose=1,
                        save_weights_only=True,
                        save_freq='epoch'),
+    callbacks = [save_best_model_sensor_1,
+                   save_checkpoint,
                    TensorBoard(log_dir=os.path.join(save_dir, 'tensorboard')),
                    MetricsTrackingCallback()
-                   ],
+                   ] if save_checkp else [save_best_model_sensor_1, TensorBoard(log_dir=os.path.join(save_dir, 'tensorboard')),
+                   MetricsTrackingCallback()
+                   ]
+    inint_model.fit(
+        train_ds,
+        batch_size=BATCH_SIZE,
+        callbacks=callbacks,
         epochs=epochs,
         validation_data=val_ds,
         verbose=1,
@@ -63,10 +68,6 @@ def count_parameters(model):
     trainable_params = np.sum([np.prod(v.shape) for v in model.trainable_weights])
     non_trainable_params = np.sum([np.prod(v.shape) for v in model.non_trainable_weights])
     total_params = trainable_params + non_trainable_params
-
-    # print(f'Total parameters: {total_params}')
-    # print(f'Trainable parameters: {trainable_params}')
-    # print(f'Non-trainable parameters: {non_trainable_params}')
     return total_params, trainable_params, non_trainable_params
 
 
@@ -127,40 +128,48 @@ def objective(trial):
 
 
     # persons_val_loss_dict = {person: 0 for person in persons_dirs}
-    # model = create_attention_weight_distr_estimation_model(**attention_distr_snc_model_parameters_dict)
-    model_sensor_1 = one_sensors_weight_estimation_proto_model(sensor_num=1, **average_sensors_weight_estimation_model_dict)
-    model_sensor_2 = one_sensors_weight_estimation_proto_model(sensor_num=2,
-                                                               **average_sensors_weight_estimation_model_dict)
-    model_sensor_3 = one_sensors_weight_estimation_proto_model(sensor_num=3,
-                                                               **average_sensors_weight_estimation_model_dict)
-    model_sensor_all = one_sensors_weight_estimation_proto_model(sensor_num='all',
-                                                               **average_sensors_weight_estimation_model_dict)
+    if create_one_sensor_models:
+        # model = create_attention_weight_distr_estimation_model(**attention_distr_snc_model_parameters_dict)
+        model_sensor_1 = one_sensors_weight_estimation_proto_model(sensor_num=1, **average_sensors_weight_estimation_model_dict)
+        model_sensor_2 = one_sensors_weight_estimation_proto_model(sensor_num=2,
+                                                                   **average_sensors_weight_estimation_model_dict)
+        model_sensor_3 = one_sensors_weight_estimation_proto_model(sensor_num=3,
+                                                                   **average_sensors_weight_estimation_model_dict)
+        # model_sensor_all = one_sensors_weight_estimation_proto_model(sensor_num='all',
+        #                                                            **average_sensors_weight_estimation_model_dict)
 
-    train_ds = create_data_for_model(person_dict, snc_window_size_hp, batch_size_np, labels_to_balance, epoch_len,
-                                     used_persons=persons_for_train_initial_model, data_mode='Train', contacts=['M'])
-    val_ds = train_ds
-
-    model_sensor_1 = fit_and_take_the_best(model_sensor_1, train_ds, val_ds, trial_dir, number=trial.number,
-                                           model_name='model_sensor_1_best',epochs=20)
-    model_sensor_2 = fit_and_take_the_best(model_sensor_2, train_ds, val_ds, trial_dir, number=trial.number,
-                                           model_name='model_sensor_2_best', epochs=20)
-    model_sensor_3 = fit_and_take_the_best(model_sensor_3, train_ds, val_ds, trial_dir, number=trial.number,
-                                           model_name='model_sensor_3_best', epochs=20)
+        train_ds = create_data_for_model(person_dict, snc_window_size_hp, batch_size_np, labels_to_balance, epoch_len,
+                                         used_persons=persons_for_train_initial_model, data_mode='Train', contacts=['M'])
+        val_ds = train_ds
+        # train one sensor models
+        model_sensor_1 = fit_and_take_the_best(model_sensor_1, train_ds, val_ds, trial_dir, number=trial.number,
+                                               model_name='model_sensor_1_best',epochs=2, save_checkp=False)
+        model_sensor_2 = fit_and_take_the_best(model_sensor_2, train_ds, val_ds, trial_dir, number=trial.number,
+                                               model_name='model_sensor_2_best', epochs=2, save_checkp=False)
+        model_sensor_3 = fit_and_take_the_best(model_sensor_3, train_ds, val_ds, trial_dir, number=trial.number,
+                                               model_name='model_sensor_3_best', epochs=2, save_checkp=False)
+    else:
+        model_1_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/21-03-2025-19-20-07/trials/trial_31/model_sensor_1_bestbest18.keras'
+        model_2_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/21-03-2025-19-20-07/trials/trial_31/model_sensor_2_bestbest19.keras'
+        model_3_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/21-03-2025-19-20-07/trials/trial_31/model_sensor_3_bestbest13.keras'
+        custom_objects = {'SEMGScatteringTransform': SEMGScatteringTransform}
+        model_sensor_1 = keras.models.load_model(model_1_path, custom_objects=custom_objects, compile=False, safe_mode=False)
+        model_sensor_2 = keras.models.load_model(model_2_path, custom_objects=custom_objects, compile=False, safe_mode=False)
+        model_sensor_3 = keras.models.load_model(model_3_path, custom_objects=custom_objects, compile=False, safe_mode=False)
 
 
     fusion_type_tp = 'attention'#trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ])
-    fused_layer_name = trial.suggest_categorical('fused_layer_name', ['mean_layer', 'dense_1', 'dense_2' ])#'dense_1'#
+    fused_layer_name = trial.suggest_categorical('fused_layer_name', ['mean_layer', 'dense_1', 'dense_2', 'final_dense_1' ])#'dense_1'#
     one_more_dense_hp = False#trial.suggest_categorical('one_more_dense', [True, False ])
     model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
                              fusion_type=fusion_type_tp, fused_layer_name = fused_layer_name,
                              window_size_snc=snc_window_size_hp,
                              trainable=True, one_more_dense = one_more_dense_hp,
+                                    embd_before_fusion = trial.suggest_categorical('embd_before_fusion', [True, False ]),
                              optimizer=average_sensors_weight_estimation_model_dict['optimizer'],
                                     learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
                              compile=True
                              )
-    # model = model_sensor_2
-
     model.summary()
     total_params, trainable_params, non_trainable_params = count_parameters(model)
 
@@ -172,15 +181,24 @@ def objective(trial):
         print("Model configuration:")
         print(model.get_config())
 
-
         model = fit_and_take_the_best(model, train_ds, val_ds, trial_dir, number=trial.number,
-                                           model_name='fused_model_best', epochs=20)
+                                           model_name='fused_model_best', epochs=20, save_checkp=True)
 
+    # Save Keras model
     initial_model_path = os.path.join(trial_dir, 'initial_pre_trained_model' + '.keras')
     model.save(initial_model_path, save_format='keras')
+
+    #Convert the model to TFLite format
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    tflite_model = converter.convert()
+
+    # Save the TFLite model to a file
+    tflite_model_path = os.path.join(trial_dir, 'model.tflite')
+    with open(tflite_model_path, 'wb') as f:
+        f.write(tflite_model)
+
     print(f'Model saved to {trial_dir}')
-    results_for_same_parameters = []
-    # for _ in range(1):
+    # TEST MODEL
     personal_metrics_dict = {}
     for person in persons_for_test:
         print(f'Training on {person}')
@@ -193,8 +211,6 @@ def objective(trial):
                                            compile=True,
                                            safe_mode=False)
 
-
-        # total_params, trainable_params, non_trainable_params = count_parameters(model)
         train_ds = create_data_for_model(person_dict, snc_window_size_hp, batch_size_np, labels_to_balance, epoch_len,
                                           [person], data_mode='Train', contacts=['M'])
         val_ds = create_data_for_model(person_dict, snc_window_size_hp, batch_size_np, labels_to_balance, epoch_len,
@@ -308,6 +324,7 @@ def logging_dirs():
 
 
 if __name__ == "__main__":
+    create_one_sensor_models = True
     SENSOR_NUM = 3
     labels_to_balance = [0, 0.5, 1, 2]
     # labels_to_balance = [0, 1, 2]

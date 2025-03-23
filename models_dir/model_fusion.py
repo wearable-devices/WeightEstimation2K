@@ -21,6 +21,7 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
                              fusion_type='average',
                                 fused_layer_name = 'mean_layer',
                                 one_more_dense = True,
+                            embd_before_fusion=True,
                              window_size_snc=234,
                              use_sensor_ordering=True,num_sensor_attention_heads=2,
                              max_weight=2,
@@ -73,9 +74,6 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
         layer_for_fusion_2 = submodel_2([input_layer_snc1, input_layer_snc2, input_layer_snc3])
         layer_for_fusion_3 = submodel_3([input_layer_snc1, input_layer_snc2, input_layer_snc3])
 
-        # layer_for_fusion_1 = snc_model_1([input_layer_snc1, input_layer_snc2, input_layer_snc3])[1]
-        # layer_for_fusion_2 = snc_model_2([input_layer_snc1, input_layer_snc2, input_layer_snc3])[1]
-        # layer_for_fusion_3 = snc_model_3([input_layer_snc1, input_layer_snc2, input_layer_snc3])[1]
         key_dim_for_sensor_att = layer_for_fusion_1.shape[-1]
         if use_sensor_ordering:
             sensor_attention_layer = OrderedAttention(num_heads=num_sensor_attention_heads,
@@ -83,18 +81,18 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
         else:
             sensor_attention_layer = keras.layers.MultiHeadAttention(num_heads=2, key_dim=key_dim_for_sensor_att)
 
-        # sensor_conc = K.concatenate([K.expand_dims(layer_for_fusion_1, axis=1),
-        #                              K.expand_dims(layer_for_fusion_2, axis=1),
-        #                              K.expand_dims(layer_for_fusion_3, axis=1)],
-        #                             axis=1)
+
+        if embd_before_fusion:
+            layer_for_fusion_1 = keras.layers.Dense(units=layer_for_fusion_1.shape[-1], activation='tanh')(layer_for_fusion_1)
+            layer_for_fusion_3 = keras.layers.Dense(units=layer_for_fusion_1.shape[-1], activation='tanh')(layer_for_fusion_3)
         sensor_conc = tf.concat([tf.expand_dims(layer_for_fusion_1, axis=1),
                                      tf.expand_dims(layer_for_fusion_2, axis=1),
                                      tf.expand_dims(layer_for_fusion_3, axis=1)],
                                     axis=1)
         attended, _ = sensor_attention_layer(sensor_conc, sensor_conc, return_attention_scores=True)
-        x1 = keras.layers.Lambda(lambda x: x[:, 0, :], name='sensor_1_attended')(attended)
-        x2 = keras.layers.Lambda(lambda x: x[:, 1, :], name='sensor_2_attended')(attended)
-        x3 = keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended')(attended)
+        # x1 = keras.layers.Lambda(lambda x: x[:, 0, :], name='sensor_1_attended')(attended)
+        # x2 = keras.layers.Lambda(lambda x: x[:, 1, :], name='sensor_2_attended')(attended)
+        # x3 = keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended')(attended)
         # mean = K.mean(attended, axis=1)
         mean = tf.reduce_mean(attended, axis=1)
         if one_more_dense:
