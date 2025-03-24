@@ -21,7 +21,7 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
                              fusion_type='average',
                                 fused_layer_name = 'mean_layer',
                                 one_more_dense = True,
-                            embd_before_fusion=True,
+                             embd_before_fusion=True,
                              window_size_snc=234,
                              use_sensor_ordering=True,num_sensor_attention_heads=2,
                              max_weight=2,
@@ -58,7 +58,7 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
         snc_output_2 = snc_output_2[0]
         snc_output_3 = snc_output_3[0]
 
-    fused_out = MajorityVote()([snc_output_1, snc_output_2, snc_output_3])
+    # fused_out = MajorityVote()([snc_output_1, snc_output_2, snc_output_3])
     if fusion_type == 'average':
         fused_out = K.expand_dims(K.mean(K.concatenate([snc_output_1, snc_output_2, snc_output_3], axis=-1), axis=-1),axis=1)
     elif fusion_type == 'concatenate':
@@ -96,7 +96,7 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
         # mean = K.mean(attended, axis=1)
         mean = tf.reduce_mean(attended, axis=1)
         if one_more_dense:
-            mean = keras.layers.Dense(5, activation='elu', name='more_dense')(mean)
+            mean = keras.layers.Dense(5, activation='tanh', name='more_dense')(mean)
 
         final_dense_layer = keras.layers.Dense(1, activation='sigmoid', name='final_dense')
         # snc_output_1 = max_weight * final_dense_layer(x1)

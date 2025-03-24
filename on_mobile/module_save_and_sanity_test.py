@@ -10,7 +10,7 @@ from db_generators.get_db import process_file
 import keras
 from custom.layers import SEMGScatteringTransform
 
-SNC_WINDOW_SIZE = 648
+# SNC_WINDOW_SIZE = 648
 
 
 def logging_dirs():
@@ -23,22 +23,63 @@ def logging_dirs():
 
     return logs_root_dir, log_dir
 
+
+# Create a simpler version of your model for mobile
+def create_mobile_friendly_model(model_path, input_shape):
+    # Load the original model
+    custom_objects = {
+        'SEMGScatteringTransform': SEMGScatteringTransform,
+    }
+    original_model = keras.models.load_model(
+        model_path,
+        custom_objects=custom_objects,
+        compile=False,
+        safe_mode=False
+    )
+
+    # Define a new model that only handles inference
+    inputs = {
+        'snc_1': tf.keras.Input(shape=input_shape, name='snc_1'),
+        'snc_2': tf.keras.Input(shape=input_shape, name='snc_2'),
+        'snc_3': tf.keras.Input(shape=input_shape, name='snc_3')
+    }
+
+    # Get the inference output from the original model
+    outputs = original_model(inputs)
+
+    # Create a new model with just the inference path
+    mobile_model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+    return mobile_model
+
+
 if __name__ == "__main__":
     logs_root_dir, log_dir = logging_dirs()
 
-    SAVED_MODEL_DIR = "saved_model"
-    model_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/15-01-2025-11-35-38/trials/trial_0/initial_pre_trained_model.keras'
+    # SAVED_MODEL_DIR = "saved_model"
+    SAVED_MODEL_DIR = str(log_dir)
+    original_model_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/24-03-2025-09-54-54/trials/trial_5/initial_pre_trained_model.keras'
+
     # FOR DEBUG
     # custom_objects = {
     #     'SEMGScatteringTransform': SEMGScatteringTransform,
     # }
     #
     # model = keras.models.load_model(
-    #     model_path,
+    #     original_model_path,
     #     custom_objects=custom_objects,
     #     compile=False,
     #     safe_mode=False
     # )
+
+    # window_size = model.inputs[0].shape[-1]
+    window_size=648
+
+    mobile_friendly_model=create_mobile_friendly_model(original_model_path,(window_size,))
+    mobile_friendly_model.save(os.path.join(log_dir,
+                                 'mobile_friendly_model' + '.keras'),
+                    save_format='keras')
+    model_path = os.path.join(log_dir, 'mobile_friendly_model.keras')
 
     m = OnDeviceModel(model_path)
     tf.saved_model.save(
@@ -61,6 +102,11 @@ if __name__ == "__main__":
         tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
         tf.lite.OpsSet.SELECT_TF_OPS  # enable TensorFlow ops.
     ]
+
+    #NEW
+    converter.allow_custom_ops = True
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
     converter.experimental_enable_resource_variables = True
     tflite_model = converter.convert()
 
@@ -71,6 +117,8 @@ if __name__ == "__main__":
 
     print('finished saving module to tflite')
 
+    # Test
+    SNC_WINDOW_SIZE=648 # or take from the model
     file_path = '/home/wld-algo-6/Data/Sorted/Leeor/weight_estimation/Train/Leeor_1_weight_0_0_Leaning_M.csv'
     snc1_data, snc2_data, snc3_data = process_file(file_path)
 

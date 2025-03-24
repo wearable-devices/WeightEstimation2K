@@ -78,7 +78,7 @@ def objective(trial):
     # Define the search space and sample parameter values
     snc_window_size_hp = 648#trial.suggest_int("snc_window_size", 162, 1800, step=18)  # 1044#
     addition_weight_hp = 0#trial.suggest_float('addition_weight', 0.0, 0.3, step=0.1)
-    epoch_num =  30#40
+    epoch_num =  20#40
     epoch_len = 10#5  # None
     use_pretrained_model = True# trial.suggest_categorical('use_pretrained_model',[True, False])
 
@@ -143,11 +143,11 @@ def objective(trial):
         val_ds = train_ds
         # train one sensor models
         model_sensor_1 = fit_and_take_the_best(model_sensor_1, train_ds, val_ds, trial_dir, number=trial.number,
-                                               model_name='model_sensor_1_best',epochs=2, save_checkp=False)
+                                               model_name='model_sensor_1_best',epochs=20, save_checkp=False)
         model_sensor_2 = fit_and_take_the_best(model_sensor_2, train_ds, val_ds, trial_dir, number=trial.number,
-                                               model_name='model_sensor_2_best', epochs=2, save_checkp=False)
+                                               model_name='model_sensor_2_best', epochs=20, save_checkp=False)
         model_sensor_3 = fit_and_take_the_best(model_sensor_3, train_ds, val_ds, trial_dir, number=trial.number,
-                                               model_name='model_sensor_3_best', epochs=2, save_checkp=False)
+                                               model_name='model_sensor_3_best', epochs=20, save_checkp=False)
     else:
         model_1_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/21-03-2025-19-20-07/trials/trial_31/model_sensor_1_bestbest18.keras'
         model_2_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/21-03-2025-19-20-07/trials/trial_31/model_sensor_2_bestbest19.keras'
@@ -160,14 +160,15 @@ def objective(trial):
 
     fusion_type_tp = 'attention'#trial.suggest_categorical('fusion_type', ['attention',  'majority_vote', ])
     fused_layer_name = trial.suggest_categorical('fused_layer_name', ['mean_layer', 'dense_1', 'dense_2', 'final_dense_1' ])#'dense_1'#
-    one_more_dense_hp = False#trial.suggest_categorical('one_more_dense', [True, False ])
+    one_more_dense_hp = trial.suggest_categorical('one_more_dense', [True, False ])
     model = one_sensor_model_fusion(model_sensor_1, model_sensor_2, model_sensor_3,
                              fusion_type=fusion_type_tp, fused_layer_name = fused_layer_name,
                              window_size_snc=snc_window_size_hp,
-                             trainable=True, one_more_dense = one_more_dense_hp,
-                                    embd_before_fusion = trial.suggest_categorical('embd_before_fusion', [True, False ]),
+                             trainable=trial.suggest_categorical('trainable', [True, False ]),#True,
+                                    one_more_dense = one_more_dense_hp,
+                                    embd_before_fusion = False,#trial.suggest_categorical('embd_before_fusion', [True, False ]),
                              optimizer=average_sensors_weight_estimation_model_dict['optimizer'],
-                                    learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
+                             learning_rate=average_sensors_weight_estimation_model_dict['learning_rate'],
                              compile=True
                              )
     model.summary()
@@ -230,7 +231,14 @@ def objective(trial):
                                           phase='Train')
         callbacks = [NanCallback(),
             TensorBoard(log_dir=os.path.join(trial_dir, 'tensorboard')),
-            SaveKerasModelCallback(trial_dir, f"model_trial_{trial.number}"),
+            SaveKerasModelCallback(trial_dir, f"{person}_model_trial_{trial.number}"),
+                     ModelCheckpoint(
+                         filepath=os.path.join(trial_dir,
+                                               f"_{person}_{model_name}_trial_{trial.number}__epoch_{{epoch:03d}}.weights.h5"),
+                         # Added .weights.h5
+                         verbose=1,
+                         save_weights_only=True,
+                         save_freq=epoch_num),#'epoch'),
             # FeatureSpacePlotCallback(person_dict, trial_dir, layer_name='dense_1', data_mode = 'Test', proj='pca',
             #                          metric="euclidean", picture_name_prefix=person + 'test_dict', used_persons=[person],
             #                          num_of_components=3, samples_per_label_per_person=10, phase='test', task='weight_estimation'),
@@ -324,7 +332,7 @@ def logging_dirs():
 
 
 if __name__ == "__main__":
-    create_one_sensor_models = True
+    create_one_sensor_models = False
     SENSOR_NUM = 3
     labels_to_balance = [0, 0.5, 1, 2]
     # labels_to_balance = [0, 1, 2]
@@ -332,7 +340,13 @@ if __name__ == "__main__":
     persons_for_train_initial_model = ['Avihoo', 'Aviner', 'Shai', 'HishamCleaned',
                                        'Alisa','Molham', 'Daniel',
                                       'Foad',
-                                     'Asher2', ]
+                                     'Asher2',
+                                       #new
+                                       'Michael',
+                                       'Perry',
+                                       'Ofek',
+                                       'Tom'
+                                       ]
     persons_for_test = [ 'Leeor',
                         'Liav','Itai',
        #

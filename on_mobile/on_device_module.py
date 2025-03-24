@@ -154,6 +154,7 @@ class OnDeviceModel(tf.Module):
   # @tf.function(input_signature=[
   #     tf.TensorSpec([None, WINDOW_SIZE], tf.float32),tf.TensorSpec([None, WINDOW_SIZE], tf.float32),tf.TensorSpec([None, WINDOW_SIZE], tf.float32),
   # ])
+
   def infer(self, snc_1,snc_2, snc_3):
     inputs = {'snc_1':snc_1, 'snc_2': snc_2, 'snc_3': snc_3}
     logits = self.model(inputs)
@@ -166,26 +167,59 @@ class OnDeviceModel(tf.Module):
     # }
     return {"out": logits}
 
+  # @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
+  # def save(self, checkpoint_path):
+  #   tensor_names = [weight.name for weight in self.model.weights]
+  #   tensors_to_save = [weight.read_value() for weight in self.model.weights]
+  #   tf.raw_ops.Save(
+  #       filename=checkpoint_path, tensor_names=tensor_names,
+  #       data=tensors_to_save, name='save')
+  #   return {
+  #       "checkpoint_path": checkpoint_path
+  #   }
+  #
+  # @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
+  # def restore(self, checkpoint_path):
+  #   restored_tensors = {}
+  #   for var in self.model.weights:
+  #     restored = tf.raw_ops.Restore(
+  #         file_pattern=checkpoint_path, tensor_name=var.name, dt=var.dtype,
+  #         name='restore')
+  #     var.assign(restored)
+  #     restored_tensors[var.name] = restored
+  #   return restored_tensors
+
+  # CLAUDE SUGGESTION
   @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
   def save(self, checkpoint_path):
-    tensor_names = [weight.name for weight in self.model.weights]
-    tensors_to_save = [weight.read_value() for weight in self.model.weights]
-    tf.raw_ops.Save(
-        filename=checkpoint_path, tensor_names=tensor_names,
-        data=tensors_to_save, name='save')
-    return {
-        "checkpoint_path": checkpoint_path
-    }
+      tensor_names = [weight.name for weight in self.model.weights]
+      tensors_to_save = [weight.read_value() for weight in self.model.weights]
+
+      # Use the save op with the filename tensor
+      tf.raw_ops.Save(
+          filename=checkpoint_path,
+          tensor_names=tensor_names,
+          data=tensors_to_save,
+          name='save')
+
+      return {
+          "checkpoint_path": checkpoint_path
+      }
 
   @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
   def restore(self, checkpoint_path):
-    restored_tensors = {}
-    for var in self.model.weights:
-      restored = tf.raw_ops.Restore(
-          file_pattern=checkpoint_path, tensor_name=var.name, dt=var.dtype,
-          name='restore')
-      var.assign(restored)
-      restored_tensors[var.name] = restored
-    return restored_tensors
+      restored_tensors = {}
 
-  # checkpoint_path =
+      for var in self.model.weights:
+          # Use restore op for each variable
+          restored = tf.raw_ops.Restore(
+              file_pattern=checkpoint_path,
+              tensor_name=var.name,
+              dt=var.dtype,
+              name='restore')
+
+          # Assign the restored value to the variable
+          var.assign(restored)
+          restored_tensors[var.name] = restored
+
+      return restored_tensors
