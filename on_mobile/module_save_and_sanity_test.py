@@ -9,6 +9,7 @@ import numpy as np
 from db_generators.get_db import process_file
 import keras
 from custom.layers import SEMGScatteringTransform
+from custom.psd_layers import SequentialCrossSpectralDensityLayer_pyriemann
 
 # SNC_WINDOW_SIZE = 648
 
@@ -28,7 +29,8 @@ def logging_dirs():
 def create_mobile_friendly_model(model_path, input_shape):
     # Load the original model
     custom_objects = {
-        'SEMGScatteringTransform': SEMGScatteringTransform,
+        # 'SEMGScatteringTransform': SEMGScatteringTransform,
+        'SequentialCrossSpectralDensityLayer_pyriemann': SequentialCrossSpectralDensityLayer_pyriemann,
     }
     original_model = keras.models.load_model(
         model_path,
@@ -58,8 +60,9 @@ if __name__ == "__main__":
 
     # SAVED_MODEL_DIR = "saved_model"
     SAVED_MODEL_DIR = str(log_dir)
-    original_model_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/24-03-2025-09-54-54/trials/trial_5/initial_pre_trained_model.keras'
-
+    # original_model_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/09-04-2025-15-13-16/trials/trial_7/fused_model_bestbest.keras'#'/home/wld-algo-6/Production/WeightEstimation2K/logs/24-03-2025-09-54-54/trials/trial_5/initial_pre_trained_model.keras'
+    original_model_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/28-04-2025-13-46-38/trials/trial_4/initial_pre_trained_model.keras'
+    original_model_path = '/home/wld-algo-6/Production/WeightEstimation2K/logs/25-05-2025-16-01-43/trials/trial_42/initial_pre_trained_model.keras'
     # FOR DEBUG
     # custom_objects = {
     #     'SEMGScatteringTransform': SEMGScatteringTransform,
@@ -73,7 +76,7 @@ if __name__ == "__main__":
     # )
 
     # window_size = model.inputs[0].shape[-1]
-    window_size=648
+    window_size=1394#1620#648
 
     mobile_friendly_model=create_mobile_friendly_model(original_model_path,(window_size,))
     mobile_friendly_model.save(os.path.join(log_dir,
@@ -118,8 +121,8 @@ if __name__ == "__main__":
     print('finished saving module to tflite')
 
     # Test
-    SNC_WINDOW_SIZE=648 # or take from the model
-    file_path = '/home/wld-algo-6/Data/Sorted/Leeor/weight_estimation/Train/Leeor_1_weight_0_0_Leaning_M.csv'
+    SNC_WINDOW_SIZE=1394 # or take from the model
+    file_path = '/media/wld-algo-6/Storage/SortedCleaned/Leeor/weight_estimation/Leeor_1_weight_0_0_Leaning_M.csv'
     snc1_data, snc2_data, snc3_data = process_file(file_path)
 
     valid_start_range = max(0, len(snc1_data) - SNC_WINDOW_SIZE + 1)

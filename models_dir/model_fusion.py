@@ -65,7 +65,7 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
         fused_out = K.concatenate([snc_output_1, snc_output_2, snc_output_3], axis=-1)
     elif fusion_type == 'majority_vote':
         fused_out = MajorityVote()([snc_output_1, snc_output_2, snc_output_3])
-    elif fusion_type == 'attention':
+    elif fusion_type in  ['attention_mean', 'attention_flat']:
         submodel_1 = get_submodel_inp_layer(snc_model_1, fused_layer_name)
         submodel_2 = get_submodel_inp_layer(snc_model_2, fused_layer_name)
         submodel_3 = get_submodel_inp_layer(snc_model_3, fused_layer_name)
@@ -95,6 +95,7 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
         # x3 = keras.layers.Lambda(lambda x: x[:, 2, :], name='sensor_3_attended')(attended)
         # mean = K.mean(attended, axis=1)
         mean = tf.reduce_mean(attended, axis=1)
+        flatten = keras.layers.Flatten()(attended)
         if one_more_dense:
             mean = keras.layers.Dense(5, activation='tanh', name='more_dense')(mean)
 
@@ -103,7 +104,11 @@ def one_sensor_model_fusion(snc_model_1, snc_model_2, snc_model_3,
         # snc_output_2 = max_weight * final_dense_layer(x2)
         # snc_output_3 = max_weight * final_dense_layer(x3)
 
-        fused_out = max_weight * final_dense_layer(mean)
+        if fusion_type == 'attention_mean':
+
+            fused_out = max_weight * final_dense_layer(mean)
+        if fusion_type == 'attention_flat':
+            fused_out = max_weight * final_dense_layer(flatten)
         first_loss = None
 
 

@@ -1,6 +1,6 @@
 
 # from training_playground.constants import *
-WINDOW_SIZE = 648
+WINDOW_SIZE =1394# 1620# 648
 import tensorflow as tf
 # from training_playground.models import create_attention_weight_estimation_model, get_optimizer
 import keras

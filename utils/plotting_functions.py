@@ -6,6 +6,71 @@ import os
 import plotly.graph_objects as go
 from PIL import Image
 import io
+import  tensorflow as tf
+
+def generate_tensor_colors(num_tensors):
+    """
+    Generate distinct colors for tensor visualization.
+
+    Parameters:
+    num_tensors (int): Number of tensors to generate colors for
+
+    Returns:
+    list: List of RGB color strings compatible with Plotly
+    """
+    # Define custom color palettes with good perceptual separation
+    color_palettes = {
+        'distinct': [
+            (230, 25, 75), (60, 180, 75), (255, 225, 25), (0, 130, 200), (245, 130, 48),
+            (145, 30, 180), (70, 240, 240), (240, 50, 230), (210, 245, 60), (250, 190, 212),
+            (0, 128, 128), (220, 190, 255), (170, 110, 40), (255, 250, 200), (128, 0, 0),
+            (170, 255, 195), (128, 128, 0), (255, 215, 180), (0, 0, 128), (128, 128, 128)
+        ],
+        'tableau20': [
+            (31, 119, 180), (255, 127, 14), (44, 160, 44), (214, 39, 40), (148, 103, 189),
+            (140, 86, 75), (227, 119, 194), (127, 127, 127), (188, 189, 34), (23, 190, 207),
+            (174, 199, 232), (255, 187, 120), (152, 223, 138), (255, 152, 150), (197, 176, 213),
+            (196, 156, 148), (247, 182, 210), (199, 199, 199), (219, 219, 141), (158, 218, 229)
+        ],
+        'plotly_dark': [
+            (99, 110, 250), (239, 85, 59), (0, 204, 150), (171, 99, 250), (255, 161, 90),
+            (25, 211, 243), (255, 102, 146), (182, 232, 128), (255, 151, 255), (254, 203, 82)
+        ]
+    }
+
+    # Choose the appropriate palette based on number of tensors
+    if num_tensors <= 10:
+        palette = color_palettes['distinct'][:10]  # Best for small number of distinct items
+    else:
+        palette = color_palettes['tableau20']  # More colors for larger sets
+
+    colors = []
+
+    # If we need more colors than are in the palette
+    if num_tensors <= len(palette):
+        colors = palette[:num_tensors]
+    else:
+        # Use all colors from the palette
+        colors = palette.copy()
+
+        # Then repeat colors with variation if needed
+        import random
+        for i in range(len(palette), num_tensors):
+            base_idx = i % len(palette)
+            variation = 30  # Add some variation to repeated colors
+            r, g, b = palette[base_idx]
+
+            # Modify the color slightly for variation
+            r = max(0, min(255, r + random.randint(-variation // 2, variation // 2)))
+            g = max(0, min(255, g + random.randint(-variation // 2, variation // 2)))
+            b = max(0, min(255, b + random.randint(-variation // 2, variation // 2)))
+
+            colors.append((r, g, b))
+
+    # Convert to the format expected by Plotly
+    return [f'rgb({r}, {g}, {b})' for r, g, b in colors]
+
+
 
 
 def plot_sequences(list_of_data):
@@ -315,3 +380,74 @@ def plot_curves(dict, show=False, save_path=None, picture_name='_'):
         plt.savefig(os.path.join(save_path, picture_name))
     # Clear the current figure
     plt.close()
+
+def interactive_plot_tensors_3d_improved(tensor_dict, output_html=None, title='Interactive 3D Visualization of Tensors'):
+    """
+    Create an interactive 3D plot of tensors with the ability to toggle visibility
+    by clicking on tensor names in the legend.
+
+    Parameters:
+    tensor_dict (dict): Dictionary of {tensor_name: tensor} where each tensor has shape (n, 3)
+    output_html (str, optional): Path to save the HTML file. If None, the plot is displayed inline.
+
+    Returns:
+    plotly.graph_objects.Figure: The interactive figure object
+    """
+    # Create a new figure
+    fig = go.Figure()
+
+    # Get colors for the tensors using our improved color generation function
+    num_tensors = len(tensor_dict)
+    colors = generate_tensor_colors(num_tensors)
+
+    # Add each tensor as a separate scatter3d trace
+    for i, (tensor_name, tensor) in enumerate(tensor_dict.items()):
+        # Convert tensor to numpy array if it's a TF tensor
+        if isinstance(tensor, tf.Tensor):
+            points = tensor.numpy()
+        else:
+            points = tensor
+
+        # Ensure shape is correct
+        if points.shape[1] != 3:
+            raise ValueError(f"Tensor {tensor_name} must have shape (n, 3), got {points.shape}")
+
+        # Extract x, y, z coordinates
+        x, y, z = points[:, 0], points[:, 1], points[:, 2]
+
+        # Add the scatter trace
+        fig.add_trace(go.Scatter3d(
+            x=x, y=y, z=z,
+            mode='markers',
+            marker=dict(
+                size=4,
+                color=colors[i],
+                opacity=0.7
+            ),
+            name=tensor_name
+        ))
+
+    # Update layout for better visualization
+    fig.update_layout(
+        title=title,
+        scene=dict(
+            xaxis_title='X',
+            yaxis_title='Y',
+            zaxis_title='Z'
+        ),
+        legend=dict(
+            title="Tensors (click to toggle visibility)",
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        ),
+        margin=dict(l=0, r=0, b=0, t=30)
+    )
+
+    # Save to HTML file if specified
+    if output_html:
+        fig.write_html(output_html)
+        print(f"Interactive plot saved to {output_html}")
+
+    return fig

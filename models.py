@@ -827,42 +827,48 @@ def one_sensors_weight_estimation_proto_model(sensor_num=2, window_size_snc=306,
     input_layer_snc2 = keras.Input(shape=(window_size_snc,), name='snc_2')
     input_layer_snc3 = keras.Input(shape=(window_size_snc,), name='snc_3')
 
-    if scattering_type == 'old':
-        scattering_layer = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)
-    elif scattering_type == 'SEMG':
-        scattering_layer = SEMGScatteringTransform(undersampling=undersampling)
-
-    scattered_snc1, scattered_snc11 = scattering_layer(input_layer_snc1)
-    scattered_snc2, scattered_snc22 = scattering_layer(input_layer_snc2)
-    scattered_snc3, scattered_snc33 = scattering_layer(input_layer_snc3)
-
-    if scattering_max_order == 2:
-        scaterred_snc_list = [K.squeeze(scattered_snc1, axis=-1),
-                              K.squeeze(scattered_snc2, axis=-1),
-                              K.squeeze(scattered_snc3, axis=-1)]
-        scattered_snc_list_2 = [K.squeeze(scattered_snc11, axis=-1),
-                                K.squeeze(scattered_snc22, axis=-1),
-                                K.squeeze(scattered_snc33, axis=-1)]
-
-        S_snc1 = K.concatenate((scaterred_snc_list[0], scattered_snc_list_2[0]), axis=1)
-        # S_snc1 = K.transpose(S_snc1, axes=(0, 2, 1))
-        S_snc2 = K.concatenate((scaterred_snc_list[1], scattered_snc_list_2[1]), axis=1)
-        # S_snc2 = K.transpose(S_snc2, axes=(0, 2, 1))
-        S_snc3 = K.concatenate((scaterred_snc_list[2], scattered_snc_list_2[2]), axis=1)
-        # S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
-    else:
+    if scattering_type is not None:
         if scattering_type == 'old':
-            scattered_snc1 = K.squeeze(scattered_snc1, axis=-1)
-            scattered_snc2 = K.squeeze(scattered_snc2, axis=-1)
-            scattered_snc3 = K.squeeze(scattered_snc3, axis=-1)
+            scattering_layer = ScatteringTimeDomain(J=J_snc, Q=Q_snc, undersampling=undersampling, max_order=2)
+        elif scattering_type == 'SEMG':
+            scattering_layer = SEMGScatteringTransform(undersampling=undersampling)
 
-            S_snc1 = K.transpose(scattered_snc1, axes=(0, 2, 1))
-            S_snc2 = K.transpose(scattered_snc2, axes=(0, 2, 1))
-            S_snc3 = K.transpose(scattered_snc3, axes=(0, 2, 1))
-        else :
-            S_snc1 = scattered_snc1
-            S_snc2 = scattered_snc2
-            S_snc3 = scattered_snc3
+
+        scattered_snc1, scattered_snc11 = scattering_layer(input_layer_snc1)
+        scattered_snc2, scattered_snc22 = scattering_layer(input_layer_snc2)
+        scattered_snc3, scattered_snc33 = scattering_layer(input_layer_snc3)
+
+        if scattering_max_order == 2:
+            scaterred_snc_list = [K.squeeze(scattered_snc1, axis=-1),
+                                  K.squeeze(scattered_snc2, axis=-1),
+                                  K.squeeze(scattered_snc3, axis=-1)]
+            scattered_snc_list_2 = [K.squeeze(scattered_snc11, axis=-1),
+                                    K.squeeze(scattered_snc22, axis=-1),
+                                    K.squeeze(scattered_snc33, axis=-1)]
+
+            S_snc1 = K.concatenate((scaterred_snc_list[0], scattered_snc_list_2[0]), axis=1)
+            # S_snc1 = K.transpose(S_snc1, axes=(0, 2, 1))
+            S_snc2 = K.concatenate((scaterred_snc_list[1], scattered_snc_list_2[1]), axis=1)
+            # S_snc2 = K.transpose(S_snc2, axes=(0, 2, 1))
+            S_snc3 = K.concatenate((scaterred_snc_list[2], scattered_snc_list_2[2]), axis=1)
+            # S_snc3 = K.transpose(S_snc3, axes=(0, 2, 1))
+        else:
+            if scattering_type == 'old':
+                scattered_snc1 = K.squeeze(scattered_snc1, axis=-1)
+                scattered_snc2 = K.squeeze(scattered_snc2, axis=-1)
+                scattered_snc3 = K.squeeze(scattered_snc3, axis=-1)
+
+                S_snc1 = K.transpose(scattered_snc1, axes=(0, 2, 1))
+                S_snc2 = K.transpose(scattered_snc2, axes=(0, 2, 1))
+                S_snc3 = K.transpose(scattered_snc3, axes=(0, 2, 1))
+            else :
+                S_snc1 = scattered_snc1
+                S_snc2 = scattered_snc2
+                S_snc3 = scattered_snc3
+    else:
+        S_snc1 = input_layer_snc1
+        S_snc2 = input_layer_snc2
+        S_snc3 = input_layer_snc3
 
     all_sensors = [S_snc1,S_snc2,S_snc3]
     if sensor_num == 'all':

@@ -1,109 +1,150 @@
-
-from keras.callbacks import TensorBoard
-import optuna
-import os
-
-from optuna_dashboard import save_plotly_graph_object, save_note
-from datetime import datetime
-from optuna.trial import TrialState
-from models import *
-from pathlib import Path
-from db_generators.generators import create_data_for_userId_model,UserIdModelGenerator, create_data_for_model
-from utils.get_data import get_weight_file_from_dir
-from constants import *
-from custom.callbacks import *
-# from db_generators.create_person_dict import *
-from tensorflow.keras.callbacks import ModelCheckpoint
-from custom.callbacks import get_layer_output
-from custom.for_debug import WeightMonitorCallback
-
-from db_generators.generators import preprocess_person_data
-from models_dir.model_fusion import one_sensor_model_fusion
-def logging_dirs():
-    package_directory = Path(__file__).parent
-
-    logs_root_dir = package_directory / 'logs'
-    logs_root_dir.mkdir(exist_ok=True)
-    log_dir = package_directory / 'logs' / datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
-    log_dir.mkdir(exist_ok=True)
-
-    return logs_root_dir, log_dir
+import numpy as np
+import matplotlib.pyplot as plt
+from pyriemann.channelselection import ElectrodeSelection
+from pyriemann.estimation import Covariances
+from sklearn.model_selection import cross_val_score
+from sklearn.pipeline import make_pipeline
+from sklearn.svm import SVC
+from pyriemann.classification import MDM
+from mne.datasets import sample
+from mne import read_epochs_eeglab
 
 
-snc_window_size = 1062
+# Let's create some example EEG data
+# In a real scenario, you'd load your own EEG data
+# Shape: (n_trials, n_channels, n_times)
+def create_synthetic_eeg_data(n_trials=100, n_channels=64, n_times=1000):
+    # Create random EEG-like data
+    data = np.random.randn(n_trials, n_channels, n_times)
 
-logs_root_dir, log_dir = logging_dirs()
-file_dir = r"C:\Users\sofia.a\PycharmProjects\DATA_2024\Sorted_old"#'/home/wld-algo-6/DataCollection/Data'
-person_dict = get_weight_file_from_dir(file_dir)
-person_zero_dict = {person_name: weight_dict[0] for person_name, weight_dict in person_dict.items() if 0 in weight_dict.keys()}
+    # Create binary labels (0, 1)
+    labels = np.random.randint(0, 2, n_trials)
 
-persons = ['Alisa',# 'Asher2', 'Avihoo', 'Aviner', 'HishamCleaned','Lee',
-              # 'Leeor',
-               'Daniel',
-              # 'Liav',
-              #  'Foad',
-              # 'Molham',
-              # 'Ofek'
-               ]#,'Guy']
-# train_data, test_data, person_to_idx = preprocess_person_data(person_zero_dict,
-#                                                                   window_size_snc=snc_window_size,
-#                                                                   window_step=54,
-#                                                                   persons=persons,
-#                                                                   print_stat=False,
-#                                                                   multiplier=10)
+    # Simulate more discriminative patterns in certain channels for class 1
+    # Channels 5, 10, 15, 20, 25 are more important for discrimination
+    important_channels = [1,2]
+    for i in range(n_trials):
+        if labels[i] == 1:
+            for ch in important_channels:
+                # Add a distinctive pattern
+                data[i, ch, :] += 0.5 * np.sin(np.linspace(0, 10 * np.pi, n_times))
 
-# After preprocessing
-# if check_for_nans(train_data) or check_for_nans(test_data):
-#     raise ValueError("NaN or Inf values found in the preprocessed data")
-
-# Create person to index mapping
-person_to_idx = {name: idx for idx, name in enumerate(persons)}
-num_persons = len(person_to_idx) if persons == 'all' else len(persons)
-
-model_snc_path_2 = r"C:\Users\sofia.a\PycharmProjects\Production\WeightEstimation2K\MODELS\initial_pre_trained_model_s2.keras"
-model_snc_path_3 = r"C:\Users\sofia.a\PycharmProjects\Production\WeightEstimation2K\MODELS\initial_pre_trained_models3.keras"
-model_2 = keras.models.load_model(model_snc_path_2, #custom_objects=custom_objects,
-                                               #compile=True,
-                                               safe_mode=False)
-model_3 = keras.models.load_model(model_snc_path_3, #custom_objects=custom_objects,
-                                               #compile=True,
-                                               safe_mode=False)
-model_majority = one_sensor_model_fusion(model_2, model_2, model_2,
-                             fusion_type='majority_vote',
-                             window_size_snc=snc_window_size,
-                             trainable=True,
-                             optimizer='Adam', learning_rate=0.0016,compile=True,
-                             )
-
-model_average = one_sensor_model_fusion(model_2, model_2, model_2,
-                             fusion_type='average',
-                             window_size_snc=snc_window_size,
-                             trainable=False,
-                             optimizer='Adam', learning_rate=0.0016,compile=True,
-                             )
-epoch_len = 10#None
-batch_size = 110
-labels_to_balance = [0,0.5,1,2]
-train_ds = create_data_for_model(person_dict, snc_window_size, batch_size, labels_to_balance, epoch_len, persons,
-                          data_mode='Train', contacts=['M'])
-val_ds = create_data_for_model(person_dict, snc_window_size, batch_size, labels_to_balance, epoch_len, persons,
-                          data_mode='Test', contacts=['M'])
+    return data, labels
 
 
-model_majority.fit(
-        val_ds,
-        validation_data=val_ds,
-        callbacks=[NanCallback()],
-        epochs=5,
-        batch_size=128
-    )
 
-model_average.evaluate(
-        val_ds,
-        # validation_data=val_ds,
-        # callbacks=[NanCallback()],
-        # epochs=1,
-        batch_size=128
-    )
 import tensorflow as tf
-print("TensorFlow version:", tf.__version__)
+
+def are_tensors_equal(tensor1, tensor2):
+    # Check if shapes are equal first
+    if tensor1.shape != tensor2.shape:
+        return False
+
+    # Check if all values are equal
+    # reduce_all() ensures ALL values are True
+    return tf.reduce_all(tf.equal(tensor1, tensor2))
+
+def get_user_sensors(user_name):
+    gen = CSVInputGenerator(loaded_dict, window_size,
+                            transition_balance={'00': 32,
+                                                '01': 3,
+                                                '10': 3,
+                                                '11': 26},  # data_mode='all',
+                            batch_size=1024,
+                            person_names=[user_name], epoch_len=None)
+
+    # take user data
+    # loaded_dict[user_name]['press_release']
+    batch = gen.__getitem__(0)
+    x_1 = tf.concat([tf.expand_dims(batch[0]['snc_1'], axis=1), tf.expand_dims(batch[0]['snc_2'], axis=1),
+                     tf.expand_dims(batch[0]['snc_3'], axis=1)], axis=1)
+    x_1 = tf.cast(x_1, dtype=tf.float32).numpy()
+    y_1 = batch[1]
+    X, y = create_synthetic_eeg_data(n_trials=1125, n_channels=n_channels, n_times=306)
+
+    # Compute covariance matrices
+    cov = Covariances().fit_transform(X)
+
+    # Initialize electrode selection with 16 electrodes and Riemannian metric
+    electrode_selector = ElectrodeSelection(nelec=n_channels, metric='riemann', n_jobs=1)
+
+    # Fit the electrode selector to the data
+    electrode_selector.fit(cov, y)
+
+    # Get the selected channels
+    selected_channels = electrode_selector.subelec_
+
+    # Transform the data to keep only the selected channels
+    X_selected = electrode_selector.transform(cov)
+    return selected_channels, X_selected
+
+# from spd_statistic.files import *
+
+from custom.psd_layers import SequentialCrossSpectralDensityLayer_pyriemann
+import pandas as pd
+
+def get_framed_snc_data_from_file(file_path, window_size=64, frame_step=16, apply_zpk2sos_filter=False):
+    data = pd.read_csv(file_path)
+
+    # Extract sensors
+    snc1 = data['Snc1'].values
+    snc2 = data['Snc2'].values
+    snc3 = data['Snc3'].values
+
+
+    if apply_zpk2sos_filter:
+        snc1 = zpk2sos_filter(snc1)
+        snc2 = zpk2sos_filter(snc2)
+        snc3 = zpk2sos_filter(snc3)
+
+
+    signal = tf.concat([tf.expand_dims(tf.convert_to_tensor(snc1), axis=-1),
+                        tf.expand_dims(tf.convert_to_tensor(snc2), axis=-1),
+                        tf.expand_dims(tf.convert_to_tensor(snc3), axis=-1)], axis=-1)
+
+    framed_signal = tf.signal.frame(signal, window_size,
+                                    frame_step=frame_step,
+                                    pad_end=False,
+                                    pad_value=0,
+                                    axis=-2,
+                                    name=None
+                                    )
+    framed_signal = tf.transpose(framed_signal,perm=(0,2,1))
+
+    return framed_signal, snc1, snc2, snc3
+
+if __name__ == "__main__":
+    # Generate synthetic data
+    n_channels = 3
+    window_size = 306
+    pattern_len = 306
+
+    file_Alisa_4 = '/home/wld-algo-6/Data/SortedCleaned/Alisa/press_release/Alisa_4_press_0_Nominal_TableTop_M.csv'
+
+    # train_files = [file_Alisa_2]
+    test_files = [file_Alisa_4]
+
+    # get labeled data from csv filles
+    # train_data, train_labels = get_framed_labeled_date_from_files(test_files, window_size=window_size,
+    #                                                               pattern_len=pattern_len,
+    #                                                               apply_zpk2sos_filter=True)
+
+    framed_signal, snc1, snc2, snc3 = get_framed_snc_data_from_file(file_Alisa_4, window_size=window_size, frame_step=16, apply_zpk2sos_filter=False)
+    # train_data = framed_signal.numpy()
+
+    csd_layer = SequentialCrossSpectralDensityLayer_pyriemann(
+        # for_model=True,
+        return_sequence=False,
+        main_window_size=window_size,  # window size
+        # preprocessing_type=None,  # or 'fft'
+        take_tangent_proj=True,
+        frame_step=8,
+        frame_length=90,
+
+        base_point_calculation='identity',
+    )
+
+    csd_layer.call(framed_signal)
+
+    ttt=1
+
