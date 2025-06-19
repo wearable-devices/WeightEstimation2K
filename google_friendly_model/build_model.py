@@ -3,25 +3,22 @@ import keras
 import tensorflow as tf
 from models import get_optimizer, get_loss
 from google_friendly_model.covariances import get_spd_matrices_fixed_point
+from google_friendly_model.tangent_proj import TangentSpaceLayer
 
-@keras.utils.register_keras_serializable(package='weight_estimation', name='SequentialCrossSpectralDensityLayer_pyriemann')
-class SequentialCrossSpectralDensityLayer_pyriemann(tf.keras.layers.Layer):
+@keras.utils.register_keras_serializable(package='weight_estimation', name='SequentialCrossSpectralSpd_matricesLayer')
+class SequentialCrossSpectralSpd_matricesLayer(tf.keras.layers.Layer):
     def __init__(self, main_window_size=160,
-                 take_tangent_proj=True,
+                 # take_tangent_proj=True,
                  metric = 'riemann',
-                 # preprocessing_type='scattering',
-                 # return_sequence=False,
-                 # frame_length=90,
-                 # frame_step = 8,
                  est='cov',
-                 base_point_calculation='identity', #'identity' , 'rieman_mean','middle_point', 'first_point'
+                 # base_point_calculation='identity', #'identity' , 'rieman_mean','middle_point', 'first_point'
                  ):
-        super(SequentialCrossSpectralDensityLayer_pyriemann, self).__init__()
+        super(SequentialCrossSpectralSpd_matricesLayer, self).__init__()
         self.main_window_size = main_window_size
-        self.take_tangent_proj = take_tangent_proj
+        # self.take_tangent_proj = take_tangent_proj
         self.metric = metric
         self.est = est
-        self.base_point_calculation = base_point_calculation
+        # self.base_point_calculation = base_point_calculation
         self._n_channels = None  # Will be set in build method
 
     def build(self, input_shape):
@@ -42,48 +39,18 @@ class SequentialCrossSpectralDensityLayer_pyriemann(tf.keras.layers.Layer):
     def call(self, inputs):
         # Compute CSD directly on input
         csd_matrices = self.compute_csd_matrices(inputs) # (batch_size,freq_bin, ch,ch)
-        if not self.take_tangent_proj:
-            # flat last two dim
-            # tril = tf.linalg.band_part(csd_matrices, -1, 0) - tf.linalg.diag(tf.linalg.diag_part(csd_matrices))
-            # tril_unique = extract_strictly_lower_triangular_flattened(tril)
-            # diag_part = tf.linalg.diag_part(csd_matrices)
-            # out = tf.concat([diag_part, tril_unique], axis=-1)
-            # return out
-            return keras.layers.Flatten()(csd_matrices)
-        else:
-            ts = TangentSpace(metric=self.metric)
+        return  csd_matrices#keras.layers.Flatten()(csd_matrices)
 
-            def pyriemann_ts(inputs):
-                import pyriemann.utils.covariance
-                return ts.transform(inputs.numpy())
-            # Project to tangent space
-
-            # tangent_vectors = ts.transform(csd_matrices.numpy())
-            tangent_vectors = tf.py_function(
-                func=lambda x: pyriemann_ts(x),
-                inp=[csd_matrices],
-                Tout=tf.float32
-            )
-            # IMPORTANT: Calculate and set the expected output shape
-            output_dim = self._n_channels * (self._n_channels + 1) // 2
-            tangent_vectors.set_shape([None, output_dim])
-
-            return tangent_vectors
-        # return csd_matrices
 
     def get_config(self):
         """Return the configuration of the layer for serialization."""
         config = super().get_config()
         config.update({
             'main_window_size': self.main_window_size,
-            'take_tangent_proj': self.take_tangent_proj,
-            # 'preprocessing_type':self.preprocessing_type,
+            # 'take_tangent_proj': self.take_tangent_proj,
             'metric': self.metric,
-            # 'return_sequence': self.return_sequence,
-            # 'frame_length': self.frame_length,
-            # 'frame_step': self.frame_step,
             'est': self.est,
-            'base_point_calculation': self.base_point_calculation
+            # 'base_point_calculation': self.base_point_calculation
         })
         return config
 
@@ -96,14 +63,10 @@ class SequentialCrossSpectralDensityLayer_pyriemann(tf.keras.layers.Layer):
         # Filter out Keras-specific parameters that aren't used by your layer
         layer_config = {k: v for k, v in config.items() if k in [
             'main_window_size',
-            # 'preprocessing_type',
-            # 'fft_window_size',
-            # 'fft_stride',
-            # 'segments_to_average',
-            # 'segments_stride',
-            'base_point_calculation',
-            # 'freq_bins',
-            # 'fs', 'return_sequence'
+            # 'take_tangent_proj',
+           'metric',
+        'est',
+        # 'base_point_calculation'
         ]}
         return cls(**layer_config)
 
@@ -111,7 +74,7 @@ class SequentialCrossSpectralDensityLayer_pyriemann(tf.keras.layers.Layer):
 
 def mpf_model(window_size=648,base_point_calculation='identity',
               frame_length = 90, frame_step=8, preprocessing=None,
-    middle_dense_units = 3,dense_activation='linear',
+                middle_dense_units = 3,dense_activation='linear',
               max_weight = 2,
             optimizer='Adam', learning_rate=0.0016,
                             loss = 'Huber',
@@ -133,15 +96,20 @@ def mpf_model(window_size=648,base_point_calculation='identity',
     sensor_tensor012 = tf.transpose(sensor_tensor012, perm=(0, 2, 1))
 
     # Create CSD Layer
-    csd_layer = SequentialCrossSpectralDensityLayer_pyriemann(
-        main_window_size=window_size,  # window size
-        take_tangent_proj=False,#True,
-        base_point_calculation=base_point_calculation,
+    spd_matrices_layer = SequentialCrossSpectralSpd_matricesLayer(
+        main_window_size=window_size,
+        # take_tangent_proj=True,
+        # base_point_calculation=base_point_calculation,
     )
 
-    tangent_vectors = csd_layer(sensor_tensor012)
-    middle_t_v = tangent_vectors#tangent_vectors[:,1,:]
-    middle_t_v = keras.layers.Flatten()(middle_t_v)
+    spd_matrices = spd_matrices_layer(sensor_tensor012)
+
+    # Apply tangent space mapping
+    tangent_layer = TangentSpaceLayer()#n_channels=3)
+    tangent_features = tangent_layer(spd_matrices)
+
+    middle_t_v = tangent_features#tangent_vectors[:,1,:]
+    # middle_t_v = keras.layers.Flatten()(spd_matrices)
     dense_layer_final = keras.layers.Dense(1, activation='sigmoid')
     x = keras.layers.Dense(middle_dense_units, activation=dense_activation)(middle_t_v)
     output = max_weight * dense_layer_final(x)

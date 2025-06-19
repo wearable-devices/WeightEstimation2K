@@ -1,10 +1,12 @@
 
 # from training_playground.constants import *
-WINDOW_SIZE =1394# 1620# 648
+WINDOW_SIZE =1377#1394# 1620# 648
 import tensorflow as tf
 # from training_playground.models import create_attention_weight_estimation_model, get_optimizer
 import keras
 from custom.layers import SEMGScatteringTransform
+from google_friendly_model.tangent_proj import TangentSpaceLayer
+from google_friendly_model.build_model import SequentialCrossSpectralSpd_matricesLayer
 
 # def create_test_model(window_size_snc=306,  J_snc=5, Q_snc=(2, 1),
 #                                           undersampling=4.8,
@@ -82,9 +84,14 @@ class OnDeviceModel(tf.Module):
 
     #LOADING from KERAS
     # self.model =  create_attention_weight_estimation_model(**attention_snc_model_parameters_dict, compile=False)
+    # custom_objects = {
+    #     'SEMGScatteringTransform': SEMGScatteringTransform,
+    # }
     custom_objects = {
-        'SEMGScatteringTransform': SEMGScatteringTransform,
+        'SequentialCrossSpectralSpd_matricesLayer': SequentialCrossSpectralSpd_matricesLayer,
+        'TangentSpaceLayer': TangentSpaceLayer
     }
+
     self.model = keras.models.load_model(
         model_path,
         custom_objects=custom_objects,
@@ -125,6 +132,136 @@ class OnDeviceModel(tf.Module):
     with tf.GradientTape() as tape:
       # prediction,prediction1,prediction2,prediction3 = self.model({'snc_1': snc1,'snc_2': snc2,'snc_3': snc3})
       prediction = self.model({'snc_1': snc1, 'snc_2': snc2, 'snc_3': snc3})
+      loss = self.model.loss(y, prediction)
+      # loss = 1/3*(self.model.loss['out1'](y,prediction1)+
+      #             self.model.loss['out2'](y,prediction2)+
+      #             self.model.loss['out3'](y,prediction3))
+    gradients = tape.gradient(loss, self.model.trainable_variables)
+    self.model.optimizer.apply_gradients(
+        zip(gradients, self.model.trainable_variables))
+    result = {"loss": loss}
+    return result
+
+  @tf.function(input_signature=[
+      tf.TensorSpec([None, WINDOW_SIZE], tf.float32),tf.TensorSpec([None, WINDOW_SIZE], tf.float32),tf.TensorSpec([None, WINDOW_SIZE], tf.float32),
+  ])
+
+  # def evaluate(self, snc1, snc2, snc3, y):
+  #   # prediction,prediction1,prediction2,prediction3 = self.model({'snc_1': snc1,'snc_2': snc2,'snc_3': snc3})
+  #
+  #   # loss = 1/3*(self.model.loss['out1'](y,prediction1)+
+  #   #           self.model.loss['out2'](y,prediction2)+
+  #   #           self.model.loss['out3'](y,prediction3))
+  #   prediction = self.model({'snc_1': snc1, 'snc_2': snc2, 'snc_3': snc3})
+  #   loss = self.model.loss(y, prediction)
+  #
+  #   result = {"loss": loss}
+  #   return result
+
+  # @tf.function(input_signature=[
+  #     tf.TensorSpec([None, WINDOW_SIZE], tf.float32),tf.TensorSpec([None, WINDOW_SIZE], tf.float32),tf.TensorSpec([None, WINDOW_SIZE], tf.float32),
+  # ])
+
+  def infer(self, snc_1,snc_2, snc_3):
+    inputs = {'snc_1':snc_1, 'snc_2': snc_2, 'snc_3': snc_3}
+    logits = self.model(inputs)
+    # probabilities = tf.nn.softmax(logits, axis=-1)
+    # return {
+    #     "out": logits[0],
+    #     "out1": logits[1],
+    #     "out2": logits[2],
+    #     "out3": logits[3]
+    # }
+    return {"out": logits}
+
+  # @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
+  # def save(self, checkpoint_path):
+  #   tensor_names = [weight.name for weight in self.model.weights]
+  #   tensors_to_save = [weight.read_value() for weight in self.model.weights]
+  #   tf.raw_ops.Save(
+  #       filename=checkpoint_path, tensor_names=tensor_names,
+  #       data=tensors_to_save, name='save')
+  #   return {
+  #       "checkpoint_path": checkpoint_path
+  #   }
+  #
+  # @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
+  # def restore(self, checkpoint_path):
+  #   restored_tensors = {}
+  #   for var in self.model.weights:
+  #     restored = tf.raw_ops.Restore(
+  #         file_pattern=checkpoint_path, tensor_name=var.name, dt=var.dtype,
+  #         name='restore')
+  #     var.assign(restored)
+  #     restored_tensors[var.name] = restored
+  #   return restored_tensors
+
+  # CLAUDE SUGGESTION
+  @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
+  def save(self, checkpoint_path):
+      tensor_names = [weight.name for weight in self.model.weights]
+      tensors_to_save = [weight.read_value() for weight in self.model.weights]
+
+      # Use the save op with the filename tensor
+      tf.raw_ops.Save(
+          filename=checkpoint_path,
+          tensor_names=tensor_names,
+          data=tensors_to_save,
+          name='save')
+
+      return {
+          "checkpoint_path": checkpoint_path
+      }
+
+  @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
+  def restore(self, checkpoint_path):
+      restored_tensors = {}
+
+      for var in self.model.weights:
+          # Use restore op for each variable
+          restored = tf.raw_ops.Restore(
+              file_pattern=checkpoint_path,
+              tensor_name=var.name,
+              dt=var.dtype,
+              name='restore')
+
+          # Assign the restored value to the variable
+          var.assign(restored)
+          restored_tensors[var.name] = restored
+
+      return restored_tensors
+
+
+class OnDeviceSubModel(tf.Module):
+
+  def __init__(self, model_path):
+
+    self.model = keras.models.load_model(
+        model_path,
+        compile=False,
+        safe_mode=False
+    )
+
+    opt = 'Adam'
+
+    self.model.compile(loss=keras.losses.Huber(),
+                      metrics=['mae', 'mse'],
+                      optimizer=opt,
+                      run_eagerly=True)
+
+  # The `train` function takes a batch of input images and labels.
+  @tf.function(input_signature=[
+      tf.TensorSpec([None, 6], tf.float32),
+      # tf.TensorSpec([None, WINDOW_SIZE], tf.float32),
+      # tf.TensorSpec([None, WINDOW_SIZE], tf.float32),
+      # [tf.TensorSpec([None, 1], tf.float32), tf.TensorSpec([None, 1], tf.float32), tf.TensorSpec([None, 1], tf.float32), tf.TensorSpec([None, 1], tf.float32)],
+      tf.TensorSpec([None, 1], tf.float32)
+  ])
+  def train(self, tg_vector, y):
+
+    with tf.GradientTape() as tape:
+      # prediction,prediction1,prediction2,prediction3 = self.model({'snc_1': snc1,'snc_2': snc2,'snc_3': snc3})
+      prediction = self.model({'snc_1': tg_vector})
       loss = self.model.loss(y, prediction)
       # loss = 1/3*(self.model.loss['out1'](y,prediction1)+
       #             self.model.loss['out2'](y,prediction2)+

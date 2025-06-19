@@ -49,10 +49,10 @@ class SaveKerasModelCallback(keras.callbacks.Callback):
             if self.best_model_metric is None or current_mae < self.best_model_metric:
                 self.best_model = self.model
                 self.best_model_metric = current_mae
-                self.model.save(os.path.join(self.save_path,
-                                             self.model_name + str(epoch) + '.keras'),
-                                save_format='keras')
-                print(f'New best model (MAE: {current_mae:.4f}) saved to {self.save_path}')
+                # self.model.save(os.path.join(self.save_path,
+                #                              self.model_name + str(epoch) + '.keras'),
+                #                 save_format='keras')
+                # print(f'New best model (MAE: {current_mae:.4f}) saved to {self.save_path}')
 
     def on_train_end(self, logs=None):
         self.model.save(os.path.join(self.save_path, self.model_name + '.keras'), save_format='keras')
