@@ -64,8 +64,8 @@ def create_mobile_friendly_model(model_path, input_shape):
     return mobile_model
 
 
-def convert_submodel_with_select_ops(submodel_path,log_dir,
-                                  window_size = SNC_WINDOW_SIZE  # 1377
+def convert_submodel_with_select_ops(submodel_path, log_dir,
+                                  # window_size = SNC_WINDOW_SIZE  # 1377
                                     ):
     """
     Convert model to TFLite with proper Select TF ops support
@@ -95,9 +95,9 @@ def convert_submodel_with_select_ops(submodel_path,log_dir,
     )
 
     # Save the mobile model
-    submodel_path = os.path.join(log_dir, 'submodel.keras')
-    submodel.save(submodel_path, save_format='keras')
-    print(f"✅ Saved mobile model: {submodel_path}")
+    # submodel_path = os.path.join(log_dir, 'submodel.keras')
+    # submodel.save(submodel_path, save_format='keras')
+    # print(f"✅ Saved mobile model: {submodel_path}")
 
     # Create OnDeviceModel wrapper
     m = OnDeviceSubModel(submodel_path)
@@ -146,7 +146,7 @@ def convert_submodel_with_select_ops(submodel_path,log_dir,
             f.write(tflite_model)
 
         print(f"✅ Saved TFLite model: {tflite_model_path}")
-        return tflite_model_path, m, log_dir
+        return tflite_model_path, m#, log_dir
 
     except Exception as e:
         print(f"❌ Conversion failed: {e}")
@@ -288,7 +288,7 @@ def print_and_get_model_layers(model_path):
     return model.layers
 
 
-def create_from_tangent_model(original_model_path):
+def create_tangent_submodel(original_model_path):
     """
     Loads the original model, finds the layers after 'tangent_space_layer', and creates a new model
     that takes keras.Input(shape=6, name='tg') as input and applies the same layers as the original model after tangent_space_layer.
@@ -320,7 +320,7 @@ def create_from_tangent_model(original_model_path):
     # The next layers are: dense_1, dense, tf.math.multiply (TFOpLambda)
     # We'll reconstruct the computation graph from this point
     # Input shape is (None, 6)
-    tg_input = keras.Input(shape=(6,), name='tg')
+    tg_input = keras.Input(shape=(6,), name='tg_vector')
 
     # Find the first layer after tangent_space_layer that takes its output
     # We'll use the model's config to reconstruct the path
@@ -379,13 +379,14 @@ if __name__ == "__main__":
     layers = print_and_get_model_layers(original_model_path)
     print(layers)
 
-    submodel = create_from_tangent_model(original_model_path)
+    submodel = create_tangent_submodel(original_model_path)
+
     # Save submodel
-    submodel.save(os.path.join(log_dir,'submodel' + '.keras'),save_format='keras')
+    submodel.save(os.path.join(log_dir,'submodel.keras'),save_format='keras')
     submodel_path = os.path.join(log_dir, 'submodel.keras')
 
     # Step 1: Convert model with Select ops
-    tflite_model_path, on_device_model = convert_submodel_with_select_ops(submodel_path, log_dir=log_dir)
+    tflite_model_path, on_device_model = convert_submodel_with_select_ops(submodel_path, log_dir)
 
     # Step 2: Test the converted TFLite model
     tflite_success = test_converted_model(tflite_model_path)
